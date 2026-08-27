@@ -63,8 +63,18 @@ public class ReviewerAgent implements Agent {
                         f.path("message").asText("")));
             }
 
-            boolean needsWork = "NEEDS_WORK".equals(node.path("status").asText())
-                    || !findings.isEmpty();
+            // Fail closed: "status" must be exactly one of the two known
+            // literals. Without this check, a degenerate-but-syntactically-valid
+            // response like "{}" (missing status, empty findings) would fall
+            // through to an implicit approval below -- confirmed empirically
+            // (see task-13-report.md, Fix round 1) that this was a real gap,
+            // not a hypothetical one.
+            String status = node.path("status").asText("");
+            if (!status.equals("OK") && !status.equals("NEEDS_WORK")) {
+                throw new IllegalArgumentException("Reviewer returned an unrecognized status: " + status);
+            }
+
+            boolean needsWork = status.equals("NEEDS_WORK") || !findings.isEmpty();
 
             return needsWork
                     ? AgentResult.needsWork(name(), summary, findings, TokenUsage.NONE)

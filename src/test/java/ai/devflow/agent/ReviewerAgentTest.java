@@ -120,4 +120,38 @@ class ReviewerAgentTest {
         assertThat(result.status()).isEqualTo(AgentResult.Status.OK);
         assertThat(result.findings()).isEmpty();
     }
+
+    // Fix round 1: an empty-but-syntactically-valid JSON object used to be
+    // read as an implicit approval, because "status" was never validated
+    // against the two known literals -- missing status + empty findings both
+    // defaulted to the OK branch. Confirmed empirically before the fix (see
+    // task-13-report.md). A degenerate/truncated response must never be OK.
+    @Test
+    void emptyJsonObjectFailsClosed() {
+        ChatClient client = mock(ChatClient.class, RETURNS_DEEP_STUBS);
+        when(client.prompt().user(any(String.class)).tools(any()).call().content())
+                .thenReturn("{}");
+
+        var agent = new ReviewerAgent(client);
+        AgentResult result = agent.run(new RunState("r", "t", workspace));
+
+        assertThat(result.status()).isEqualTo(AgentResult.Status.FAILED);
+    }
+
+    // Same gap, different shape: a recognized JSON envelope but a status
+    // value that isn't one of the two known literals must also fail closed,
+    // not be silently treated as approval (or as NEEDS_WORK).
+    @Test
+    void unrecognizedStatusValueFailsClosed() {
+        ChatClient client = mock(ChatClient.class, RETURNS_DEEP_STUBS);
+        when(client.prompt().user(any(String.class)).tools(any()).call().content())
+                .thenReturn("""
+                    {"status":"MAYBE","summary":"unsure","findings":[]}
+                    """);
+
+        var agent = new ReviewerAgent(client);
+        AgentResult result = agent.run(new RunState("r", "t", workspace));
+
+        assertThat(result.status()).isEqualTo(AgentResult.Status.FAILED);
+    }
 }
