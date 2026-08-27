@@ -20,11 +20,24 @@ No gradle.properties setting can substitute for this.
 
 ## Non-negotiables
 
-- **Pin every model explicitly.** Spring AI's Anthropic starter defaults to
-  `claude-sonnet-4-20250514`, which is stale. Router/scribe use
-  `claude-haiku-4-5`; coder/reviewer use `claude-opus-5`.
-- **Never send `temperature`.** Spring AI defaults it to 1.0 and Opus 5 rejects
-  sampling parameters with HTTP 400. See `config/ChatClientConfig.java`.
+- **Pin every model explicitly — never rely on the starter's default.** Static
+  inspection (Task 3, independently confirmed by review) found Spring AI
+  2.0.1's actual compiled default is `claude-haiku-4-5` — not
+  `claude-sonnet-4-20250514` as earlier assumed from doc research — applied
+  via a real null-coalescing fallback in `AnthropicChatOptions`'s constructor
+  when no model is set. Router/scribe use `claude-haiku-4-5`; coder/reviewer
+  use `claude-opus-5` — always set explicitly in `ChatClientConfig`
+  (Task 11); never depend on the default either way.
+- **Never call `.temperature(...)` explicitly.** Opus 5 rejects an explicit
+  sampling parameter with HTTP 400. Static and runtime evidence (Task 3,
+  independently reproduced by review) traced the full chain —
+  `AnthropicChatOptions`'s `temperature` field stays `null` until set,
+  `AnthropicChatModel` guards `if (temperature != null)` before adding it to
+  the outgoing request, and the underlying SDK omits unset fields from
+  serialization entirely. So simply never calling `.temperature(...)` is
+  sufficient — there's no default value fighting you. See this file's
+  "Verified Spring AI 2.0.1 syntax" section for the full evidence trail. A
+  live-key confirmation (see that section) is still the final proof step.
 - **The orchestrator never holds file contents or diffs.** Only `AgentResult`
   records. If you find yourself passing a diff through `Orchestrator`, stop —
   that breaks the context-isolation guarantee the whole design rests on.
