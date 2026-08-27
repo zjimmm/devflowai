@@ -14,6 +14,7 @@ other and never see another agent's context. The orchestrator decides what runs.
 
    ```java
    public interface Agent {
+       String name();
        AgentResult run(RunState state);
    }
    ```
@@ -36,8 +37,11 @@ other and never see another agent's context. The orchestrator decides what runs.
 
 ## Test it
 
-Stub the `ChatClient` so the test costs nothing:
+Stub the `ChatClient` so the test costs nothing. Use Mockito with deep stubs:
 
 ```java
-ChatClient stub = ChatClientStubs.returning("{\"status\":\"OK\",\"summary\":\"...\"}");
+// static imports: org.mockito.Mockito.mock, org.mockito.Mockito.RETURNS_DEEP_STUBS, org.mockito.Mockito.when, org.mockito.ArgumentMatchers.any
+ChatClient client = mock(ChatClient.class, RETURNS_DEEP_STUBS);
+when(client.prompt().user(any(String.class)).tools(any()).call().content())
+        .thenReturn("{\"status\":\"OK\",\"summary\":\"...\"}");
 ```
