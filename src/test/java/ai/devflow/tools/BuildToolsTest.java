@@ -76,6 +76,29 @@ class BuildToolsTest {
     }
 
     @Test
+    void boundsOutputRegardlessOfHowMuchTheProcessActuallyProduces() throws Exception {
+        // A build that produces output far larger than MAX_OUTPUT_CHARS must
+        // never require BuildTools to hold all of it in memory at once --
+        // only the bounded tail that truncate() would keep in the end
+        // anyway. A prior implementation buffered the entire stream into an
+        // unbounded ByteArrayOutputStream before truncate() ever ran, so a
+        // pathological build (arbitrary target-repo code, by design) could
+        // exhaust heap well before the 5-minute production timeout fires --
+        // defeating the whole purpose truncation exists for. `yes` piped
+        // through `head -c` produces 5,000,000 bytes near-instantly, well
+        // beyond MAX_OUTPUT_CHARS (4,000), so this both runs fast and proves
+        // the result length stays bounded rather than growing with the
+        // amount of output actually produced.
+        writeFakeGradlew("#!/bin/sh\nyes \"0123456789abcdef\" | head -c 5000000\nexit 0\n");
+
+        var result = build.build("test");
+
+        assertThat(result.success()).isTrue();
+        assertThat(result.output()).hasSizeLessThan(4_200);
+        assertThat(result.output()).contains("truncated");
+    }
+
+    @Test
     void timeoutActuallyBoundsWallClockTimeAndKillsTheHungProcess() throws Exception {
         // A process that produces continuous output and never exits on its own
         // for 60 seconds. A naive implementation that reads the process's

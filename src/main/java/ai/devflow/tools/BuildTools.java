@@ -3,9 +3,9 @@ package ai.devflow.tools;
 import ai.devflow.workspace.Workspace;
 import org.springframework.ai.tool.annotation.Tool;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -136,24 +136,84 @@ public class BuildTools {
      * out from under it (destroyForcibly() closes the pipe, which surfaces
      * here as EOF or, occasionally, an IOException -- either way we keep
      * whatever was captured so far).
+     *
+     * Buffers only a bounded tail rather than the whole stream. We only ever
+     * keep MAX_OUTPUT_CHARS worth of output in the end (truncate() sees to
+     * that), so there is no reason to ever hold more than that in memory
+     * while draining -- doing otherwise let a runaway or pathological build
+     * (arbitrary target-repo code, by design) grow an unbounded buffer for
+     * up to the full timeout window (5 minutes in production) before
+     * truncate() ever got a chance to run, which could exhaust the host
+     * process's heap well before the timeout fires. A fixed-size ring
+     * buffer, sized beyond MAX_OUTPUT_CHARS for UTF-8 headroom, bounds
+     * memory use regardless of how much output the process actually
+     * produces.
      */
     private static final class OutputDrain implements Runnable {
+        // Sized beyond MAX_OUTPUT_CHARS to tolerate multi-byte UTF-8
+        // sequences straddling the eventual truncation boundary. Bytes vs.
+        // chars aren't 1:1 in general, but this is generous enough for the
+        // ASCII-heavy build output this class actually handles, and any
+        // sequence split by the boundary is simply replaced with U+FFFD by
+        // the default String(byte[], UTF_8) decoder below rather than
+        // throwing -- acceptable for a best-effort log tail.
+        private static final int MAX_BUFFERED_BYTES = MAX_OUTPUT_CHARS * 4;
+
         private final InputStream in;
+        private final byte[] ring = new byte[MAX_BUFFERED_BYTES];
+        private long written = 0; // total bytes ever seen; may exceed ring.length
         private volatile String result = "";
 
         OutputDrain(InputStream in) { this.in = in; }
 
         @Override
         public void run() {
-            ByteArrayOutputStream buf = new ByteArrayOutputStream();
+            byte[] chunk = new byte[8_192];
+            int n;
             try {
-                in.transferTo(buf);
+                while ((n = in.read(chunk)) != -1) {
+                    appendToRing(chunk, n);
+                }
             } catch (IOException ignored) {
                 // Stream was torn down mid-read (e.g. destroyForcibly()); fall
-                // through and keep whatever partial output landed in buf.
+                // through and keep whatever partial output landed in the ring.
             } finally {
-                result = buf.toString();
+                result = decodeTail();
             }
+        }
+
+        /** Writes {@code len} bytes of {@code data} into the ring, overwriting the oldest bytes as needed. */
+        private void appendToRing(byte[] data, int len) {
+            int offset = 0;
+            if (len > MAX_BUFFERED_BYTES) {
+                // This single chunk alone exceeds the whole buffer; only its
+                // own tail could possibly survive anyway, so treat the rest
+                // as immediately overwritten without touching the array.
+                offset = len - MAX_BUFFERED_BYTES;
+                written += offset;
+                len = MAX_BUFFERED_BYTES;
+            }
+            int start = (int) (written % MAX_BUFFERED_BYTES);
+            int firstPart = Math.min(len, MAX_BUFFERED_BYTES - start);
+            System.arraycopy(data, offset, ring, start, firstPart);
+            int remaining = len - firstPart;
+            if (remaining > 0) {
+                System.arraycopy(data, offset + firstPart, ring, 0, remaining);
+            }
+            written += len;
+        }
+
+        private String decodeTail() {
+            int len = (int) Math.min(written, MAX_BUFFERED_BYTES);
+            byte[] tail = new byte[len];
+            if (written <= MAX_BUFFERED_BYTES) {
+                System.arraycopy(ring, 0, tail, 0, len);
+            } else {
+                int start = (int) (written % MAX_BUFFERED_BYTES);
+                System.arraycopy(ring, start, tail, 0, MAX_BUFFERED_BYTES - start);
+                System.arraycopy(ring, 0, tail, MAX_BUFFERED_BYTES - start, start);
+            }
+            return new String(tail, StandardCharsets.UTF_8);
         }
 
         String output() { return result; }
