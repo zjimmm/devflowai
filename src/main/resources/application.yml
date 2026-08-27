@@ -1,0 +1,13 @@
+spring:
+  application:
+    name: devflowai
+  ai:
+    anthropic:
+      api-key: ${ANTHROPIC_API_KEY}
+
+devflowai:
+  review:
+    max-iterations: 3
+    max-human-iterations: 5
+  gate:
+    timeout-minutes: 10
