@@ -43,7 +43,7 @@ public class FileTools {
         Path target = guard.resolve(path);
         try (Stream<Path> walk = Files.walk(target)) {
             return walk.filter(Files::isRegularFile)
-                    .filter(p -> !p.toString().contains("/.git/"))
+                    .filter(p -> !isUnderGitDir(guard.root(), p))
                     .map(p -> guard.root().relativize(p).toString())
                     .collect(Collectors.joining("\n"));
         } catch (IOException e) {
@@ -55,7 +55,7 @@ public class FileTools {
     public String searchFiles(String text) {
         try (Stream<Path> walk = Files.walk(guard.root())) {
             return walk.filter(Files::isRegularFile)
-                    .filter(p -> !p.toString().contains("/.git/"))
+                    .filter(p -> !isUnderGitDir(guard.root(), p))
                     .filter(p -> {
                         try { return Files.readString(p).contains(text); }
                         catch (IOException e) { return false; }
@@ -65,5 +65,12 @@ public class FileTools {
         } catch (IOException e) {
             return "Search failed: " + e.getMessage();
         }
+    }
+
+    private boolean isUnderGitDir(Path root, Path candidate) {
+        for (Path component : root.relativize(candidate)) {
+            if (component.toString().equals(".git")) return true;
+        }
+        return false;
     }
 }

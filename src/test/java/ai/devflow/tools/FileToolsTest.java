@@ -50,4 +50,21 @@ class FileToolsTest {
         assertThatThrownBy(() -> tools.readFile("../../../etc/passwd"))
                 .isInstanceOf(SecurityException.class);
     }
+
+    @Test
+    void excludesGitDirFromListFiles() throws Exception {
+        Files.createDirectories(root.resolve(".git"));
+        Files.writeString(root.resolve(".git/HEAD"), "ref: refs/heads/main");
+        String result = tools.listFiles(".");
+        assertThat(result).contains("Hello.java")
+                .doesNotContain(".git/HEAD");
+    }
+
+    @Test
+    void excludesGitDirFromSearch() throws Exception {
+        Files.createDirectories(root.resolve(".git"));
+        Files.writeString(root.resolve(".git/HEAD"), "ref: refs/heads/main");
+        String result = tools.searchFiles("refs/heads");
+        assertThat(result).doesNotContain(".git/HEAD");
+    }
 }
