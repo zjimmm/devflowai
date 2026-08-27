@@ -1,0 +1,30 @@
+# Build
+build/
+target/
+out/
+bin/
+!gradle/wrapper/gradle-wrapper.jar
+.gradle/
+
+# Secrets — devflowai's repo is public. Never commit an API key.
+.env
+.env.*
+*.local.properties
+application-local.yml
+application-local.properties
+secrets/
+
+# devflowai runtime state (skills are committed deliberately; scratch is not)
+.devflowai/runs/
+.devflowai/workspaces/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.project
+.classpath
+
+# OS
+.DS_Store
