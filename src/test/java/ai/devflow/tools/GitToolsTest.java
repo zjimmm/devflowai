@@ -44,4 +44,14 @@ class GitToolsTest {
         assertThat(git.commit("add newfile")).containsIgnoringCase("committed");
         assertThat(git.status()).containsIgnoringCase("clean");
     }
+
+    @Test
+    void statusAndChangedFilesIncludeUnstagedDeletions() throws Exception {
+        // Delete a tracked file without staging the deletion
+        Files.delete(workspace.root().resolve("src/main/java/com/example/User.java"));
+        // status() should report it as missing
+        assertThat(git.status()).containsIgnoringCase("missing");
+        // changedFiles() should include it
+        assertThat(git.changedFiles()).contains("src/main/java/com/example/User.java");
+    }
 }

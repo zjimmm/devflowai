@@ -27,6 +27,7 @@ public class GitTools {
             s.getModified().forEach(f -> lines.add("modified: " + f));
             s.getRemoved().forEach(f -> lines.add("removed:  " + f));
             s.getUntracked().forEach(f -> lines.add("new:      " + f));
+            s.getMissing().forEach(f -> lines.add("missing:  " + f));
             return String.join("\n", lines);
         } catch (Exception e) {
             return "git status failed: " + e.getMessage();
@@ -67,6 +68,7 @@ public class GitTools {
             all.addAll(s.getModified());
             all.addAll(s.getRemoved());
             all.addAll(s.getUntracked());
+            all.addAll(s.getMissing());
             return new ArrayList<>(all);
         } catch (Exception e) {
             return List.of();
