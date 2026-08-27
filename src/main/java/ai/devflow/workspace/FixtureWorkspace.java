@@ -6,9 +6,12 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.*;
 import java.util.Comparator;
+import java.util.Set;
 import java.util.stream.Stream;
 
 public class FixtureWorkspace implements Workspace {
+
+    private static final Set<String> SKIP_DIR_NAMES = Set.of(".git", ".gradle", "build");
 
     private final Path source;
     private final String runId;
@@ -67,16 +70,34 @@ public class FixtureWorkspace implements Workspace {
     }
 
     private void copyRecursively(Path from, Path to) throws IOException {
+        // Skip build-artifact directories (.git, .gradle, build) wherever they
+        // occur under the source tree. The fixture is a standalone Gradle
+        // project (Task 4's brief itself instructs verifying it builds
+        // standalone), so a `.gradle` cache and `build` output directory can
+        // legitimately exist on disk next to it even though they're gitignored
+        // and never committed -- copyRecursively walks the real filesystem, not
+        // git's tracked state, so without this filter those directories (and
+        // anything git-related) get copied into every temp workspace. Matched
+        // by exact path-component name, not substring, so a real source file
+        // like MyBuildHelper.java is never excluded.
         try (Stream<Path> walk = Files.walk(from)) {
-            walk.forEach(src -> {
-                try {
-                    Path dest = to.resolve(from.relativize(src).toString());
-                    if (Files.isDirectory(src)) Files.createDirectories(dest);
-                    else Files.copy(src, dest, StandardCopyOption.REPLACE_EXISTING);
-                } catch (IOException e) {
-                    throw new UncheckedIOException(e);
-                }
-            });
+            walk.filter(src -> !isUnderSkippedDir(from, src))
+                .forEach(src -> {
+                    try {
+                        Path dest = to.resolve(from.relativize(src).toString());
+                        if (Files.isDirectory(src)) Files.createDirectories(dest);
+                        else Files.copy(src, dest, StandardCopyOption.REPLACE_EXISTING);
+                    } catch (IOException e) {
+                        throw new UncheckedIOException(e);
+                    }
+                });
         }
+    }
+
+    private boolean isUnderSkippedDir(Path root, Path candidate) {
+        for (Path component : root.relativize(candidate)) {
+            if (SKIP_DIR_NAMES.contains(component.toString())) return true;
+        }
+        return false;
     }
 }
