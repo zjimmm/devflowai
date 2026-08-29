@@ -46,7 +46,14 @@ public class GitTools {
         }
     }
 
-    @Tool(description = "Stage all changes and commit them with the given message.")
+    /**
+     * Not a @Tool — committing sits behind Gate 3 (a human gate, Phase 4) per
+     * spec §5 step 13. An agent-callable commit tool would let the coder
+     * commit mid-task, which clears git status and makes changedFiles()
+     * return empty before the reviewer ever runs — see the C1 finding in
+     * the Phases 0-3 final review. Only Java code (the future orchestrator)
+     * may call this.
+     */
     public String commit(String message) {
         try (Git git = Git.open(workspace.root().toFile())) {
             git.add().addFilepattern(".").call();
