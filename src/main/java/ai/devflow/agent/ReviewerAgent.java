@@ -1,7 +1,7 @@
 package ai.devflow.agent;
 
 import ai.devflow.orchestrator.RunState;
-import ai.devflow.tools.FileTools;
+import ai.devflow.tools.ReadOnlyFileTools;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.ai.chat.client.ChatClient;
@@ -40,7 +40,7 @@ public class ReviewerAgent implements Agent {
 
         String raw = chatClient.prompt()
                 .user(prompt)
-                .tools(new FileTools(state.workspace().guard()))
+                .tools(new ReadOnlyFileTools(state.workspace().guard()))
                 .call()
                 .content();
 
