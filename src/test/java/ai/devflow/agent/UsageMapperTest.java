@@ -3,6 +3,7 @@ package ai.devflow.agent;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.metadata.ChatResponseMetadata;
 import org.springframework.ai.chat.metadata.DefaultUsage;
+import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.ai.chat.model.ChatResponse;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -35,9 +36,10 @@ class UsageMapperTest {
 
     @Test
     void treatsNullTokenCountsAsZeroRatherThanThrowing() {
-        var metadata = ChatResponseMetadata.builder()
-                .usage(new DefaultUsage(null, null))
-                .build();
+        var usage = mock(Usage.class);
+        when(usage.getPromptTokens()).thenReturn(null);
+        when(usage.getCompletionTokens()).thenReturn(null);
+        var metadata = ChatResponseMetadata.builder().usage(usage).build();
         ChatResponse response = mock(ChatResponse.class);
         when(response.getMetadata()).thenReturn(metadata);
 
