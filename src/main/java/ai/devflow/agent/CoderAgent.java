@@ -2,7 +2,6 @@ package ai.devflow.agent;
 
 import ai.devflow.orchestrator.RunState;
 import ai.devflow.tools.FileTools;
-import ai.devflow.tools.GitTools;
 import org.springframework.ai.chat.client.ChatClient;
 
 import java.util.List;
@@ -11,12 +10,10 @@ import java.util.stream.Collectors;
 public class CoderAgent implements Agent {
 
     private final ChatClient chatClient;
-    private final GitTools gitTools;
     private String lastPrompt = "";
 
-    public CoderAgent(ChatClient chatClient, GitTools gitTools) {
+    public CoderAgent(ChatClient chatClient) {
         this.chatClient = chatClient;
-        this.gitTools = gitTools;
     }
 
     @Override public String name() { return "coder"; }
@@ -30,12 +27,12 @@ public class CoderAgent implements Agent {
 
         String summary = chatClient.prompt()
                 .user(lastPrompt)
-                .tools(new FileTools(state.workspace().guard()), gitTools)
+                .tools(new FileTools(state.workspace().guard()), state.gitTools())
                 .call()
                 .content();
 
         // Derived from git, never from what the model claims.
-        List<String> touched = gitTools.changedFiles();
+        List<String> touched = state.gitTools().changedFiles();
 
         return AgentResult.ok(name(), summary, touched, TokenUsage.NONE);
     }

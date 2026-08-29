@@ -1,7 +1,6 @@
 package ai.devflow.agent;
 
 import ai.devflow.orchestrator.RunState;
-import ai.devflow.tools.GitTools;
 import ai.devflow.workspace.*;
 import org.junit.jupiter.api.*;
 import org.springframework.ai.chat.client.ChatClient;
@@ -35,7 +34,7 @@ class CoderAgentTest {
         when(client.prompt().user(any(String.class)).tools(any(Object[].class)).call().content())
                 .thenReturn("I made no changes.");
 
-        var agent = new CoderAgent(client, new GitTools(workspace));
+        var agent = new CoderAgent(client);
         var state = new RunState("coder-test", "add a class", workspace);
 
         AgentResult result = agent.run(state);
@@ -58,7 +57,7 @@ class CoderAgentTest {
         ChatClient client = mock(ChatClient.class, RETURNS_DEEP_STUBS);
         when(client.prompt().user(any(String.class)).tools(any(Object[].class)).call().content()).thenReturn("done");
 
-        var agent = new CoderAgent(client, new GitTools(workspace));
+        var agent = new CoderAgent(client);
         var state = new RunState("coder-test", "fix it", workspace);
         state.addFindings(List.of(Finding.fromHuman("use a DTO, don't annotate the entity")));
 

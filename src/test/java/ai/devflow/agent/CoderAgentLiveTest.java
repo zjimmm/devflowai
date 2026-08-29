@@ -1,7 +1,6 @@
 package ai.devflow.agent;
 
 import ai.devflow.orchestrator.RunState;
-import ai.devflow.tools.GitTools;
 import ai.devflow.workspace.*;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
@@ -24,7 +23,7 @@ class CoderAgentLiveTest {
         Workspace ws = new FixtureWorkspace(Path.of("src/test/resources/fixture"), "live-coder");
         ws.prepare();
         try {
-            var agent = new CoderAgent(coderClient, new GitTools(ws));
+            var agent = new CoderAgent(coderClient);
             var state = new RunState("live-coder",
                 "Add bean validation to UserController so a null or blank email is rejected.", ws);
 

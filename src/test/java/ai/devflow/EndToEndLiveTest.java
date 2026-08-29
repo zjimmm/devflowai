@@ -2,7 +2,6 @@ package ai.devflow;
 
 import ai.devflow.agent.*;
 import ai.devflow.orchestrator.*;
-import ai.devflow.tools.GitTools;
 import ai.devflow.workspace.*;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
@@ -27,7 +26,7 @@ class EndToEndLiveTest {
         ws.prepare();
         try {
             var orchestrator = new Orchestrator(
-                    new CoderAgent(coderClient, new GitTools(ws)),
+                    new CoderAgent(coderClient),
                     new ReviewerAgent(reviewerClient),
                     3, 5);
 

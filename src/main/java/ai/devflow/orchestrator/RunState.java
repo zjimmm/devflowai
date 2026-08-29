@@ -3,16 +3,28 @@ package ai.devflow.orchestrator;
 import ai.devflow.agent.AgentResult;
 import ai.devflow.agent.Finding;
 import ai.devflow.agent.TokenUsage;
+import ai.devflow.tools.GitTools;
 import ai.devflow.workspace.Workspace;
 
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Mutable context for one run.
+ *
+ * <p>Thread-safe by design: from Phase 4 the orchestrator mutates this on a
+ * worker thread while the SSE publisher and the /approve endpoint read it from
+ * request threads. Every accessor is synchronized on the instance, and the
+ * list accessors return snapshots (not live views) so a caller iterating a
+ * snapshot cannot see a concurrent modification.
+ */
 public class RunState {
 
     private final String runId;
     private final String task;
     private final Workspace workspace;
+    private final GitTools gitTools;
+
     private final List<AgentResult> history = new ArrayList<>();
     private final List<Finding> openFindings = new ArrayList<>();
     private final List<String> loadedSkills = new ArrayList<>();
@@ -20,31 +32,41 @@ public class RunState {
     private int reviewIterations = 0;
     private int humanIterations = 0;
     private TokenUsage totalTokens = TokenUsage.NONE;
+    private RunPhase phase = RunPhase.PREPARING;
 
     public RunState(String runId, String task, Workspace workspace) {
         this.runId = runId;
         this.task = task;
         this.workspace = workspace;
+        // Bound to THIS run's workspace, created once. Agents read tools from
+        // here rather than holding their own, so agents stay stateless and are
+        // safe to register as singleton beans (Phase 3 finding I3).
+        this.gitTools = new GitTools(workspace);
     }
 
     public String runId() { return runId; }
     public String task() { return task; }
     public Workspace workspace() { return workspace; }
-    public List<AgentResult> history() { return List.copyOf(history); }
-    public List<Finding> openFindings() { return List.copyOf(openFindings); }
-    public List<String> loadedSkills() { return List.copyOf(loadedSkills); }
-    public int reviewIterations() { return reviewIterations; }
-    public int humanIterations() { return humanIterations; }
-    public TokenUsage totalTokens() { return totalTokens; }
+    public GitTools gitTools() { return gitTools; }
 
-    public void record(AgentResult result) {
+    public synchronized List<AgentResult> history() { return List.copyOf(history); }
+    public synchronized List<Finding> openFindings() { return List.copyOf(openFindings); }
+    public synchronized List<String> loadedSkills() { return List.copyOf(loadedSkills); }
+    public synchronized int reviewIterations() { return reviewIterations; }
+    public synchronized int humanIterations() { return humanIterations; }
+    public synchronized TokenUsage totalTokens() { return totalTokens; }
+    public synchronized RunPhase phase() { return phase; }
+
+    public synchronized void setPhase(RunPhase phase) { this.phase = phase; }
+
+    public synchronized void record(AgentResult result) {
         history.add(result);
         totalTokens = totalTokens.plus(result.tokens());
     }
 
-    public void addFindings(List<Finding> findings) { openFindings.addAll(findings); }
-    public void clearFindings() { openFindings.clear(); }
-    public void addLoadedSkill(String name) { loadedSkills.add(name); }
-    public void incrementReviewIterations() { reviewIterations++; }
-    public void incrementHumanIterations() { humanIterations++; }
+    public synchronized void addFindings(List<Finding> findings) { openFindings.addAll(findings); }
+    public synchronized void clearFindings() { openFindings.clear(); }
+    public synchronized void addLoadedSkill(String name) { loadedSkills.add(name); }
+    public synchronized void incrementReviewIterations() { reviewIterations++; }
+    public synchronized void incrementHumanIterations() { humanIterations++; }
 }
