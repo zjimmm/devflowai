@@ -5,6 +5,7 @@ import ai.devflow.tools.ReadOnlyFileTools;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.model.ChatResponse;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -38,16 +39,26 @@ public class ReviewerAgent implements Agent {
              "findings":[{"severity":"LOW"|"MEDIUM"|"HIGH","file":"...","line":0,"message":"..."}]}
             """.formatted(state.task(), changed);
 
-        String raw = chatClient.prompt()
+        ChatResponse response = chatClient.prompt()
                 .user(prompt)
                 .tools(new ReadOnlyFileTools(state.workspace().guard()))
                 .call()
-                .content();
+                .chatResponse();
 
-        return parse(raw);
+        return parse(textOf(response), UsageMapper.from(response));
     }
 
-    private AgentResult parse(String raw) {
+    /** Response text, tolerating a null or empty response rather than throwing. */
+    private static String textOf(ChatResponse response) {
+        if (response == null || response.getResult() == null
+                || response.getResult().getOutput() == null) {
+            return "";
+        }
+        String text = response.getResult().getOutput().getText();
+        return text == null ? "" : text;
+    }
+
+    private AgentResult parse(String raw, TokenUsage usage) {
         try {
             String json = raw.substring(raw.indexOf('{'), raw.lastIndexOf('}') + 1);
             JsonNode node = MAPPER.readTree(json);
@@ -77,14 +88,14 @@ public class ReviewerAgent implements Agent {
             boolean needsWork = status.equals("NEEDS_WORK") || !findings.isEmpty();
 
             return needsWork
-                    ? AgentResult.needsWork(name(), summary, findings, TokenUsage.NONE)
-                    : AgentResult.ok(name(), summary, List.of(), TokenUsage.NONE);
+                    ? AgentResult.needsWork(name(), summary, findings, usage)
+                    : AgentResult.ok(name(), summary, List.of(), usage);
 
         } catch (Exception e) {
             // Fail closed: an unparseable review is never an approval.
             return new AgentResult(name(), AgentResult.Status.FAILED,
                     "Could not parse reviewer output: " + e.getMessage(),
-                    List.of(), List.of(), TokenUsage.NONE);
+                    List.of(), List.of(), usage);
         }
     }
 }

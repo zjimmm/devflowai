@@ -4,6 +4,11 @@ import ai.devflow.orchestrator.RunState;
 import ai.devflow.workspace.*;
 import org.junit.jupiter.api.*;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.metadata.ChatResponseMetadata;
+import org.springframework.ai.chat.metadata.DefaultUsage;
+import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.model.Generation;
 
 import java.nio.file.*;
 import java.util.List;
@@ -25,14 +30,23 @@ class CoderAgentTest {
     @AfterEach
     void tearDown() throws Exception { workspace.cleanup(); }
 
+    /** A ChatResponse carrying the given text and token counts. */
+    private static ChatResponse responseWith(String text, int promptTokens, int completionTokens) {
+        var generation = new Generation(new AssistantMessage(text));
+        var metadata = ChatResponseMetadata.builder()
+                .usage(new DefaultUsage(promptTokens, completionTokens))
+                .build();
+        return new ChatResponse(List.of(generation), metadata);
+    }
+
     @Test
     void filesTouchedComesFromGitNotFromTheModel() throws Exception {
         // The model claims nothing; git sees a real edit.
         Files.writeString(workspace.root().resolve("Touched.java"), "class Touched {}");
 
         ChatClient client = mock(ChatClient.class, RETURNS_DEEP_STUBS);
-        when(client.prompt().user(any(String.class)).tools(any(Object[].class)).call().content())
-                .thenReturn("I made no changes.");
+        when(client.prompt().user(any(String.class)).tools(any(Object[].class)).call().chatResponse())
+                .thenReturn(responseWith("I made no changes.", 10, 5));
 
         var agent = new CoderAgent(client);
         var state = new RunState("coder-test", "add a class", workspace);
@@ -55,7 +69,8 @@ class CoderAgentTest {
     @Test
     void openFindingsAreIncludedInThePrompt() throws Exception {
         ChatClient client = mock(ChatClient.class, RETURNS_DEEP_STUBS);
-        when(client.prompt().user(any(String.class)).tools(any(Object[].class)).call().content()).thenReturn("done");
+        when(client.prompt().user(any(String.class)).tools(any(Object[].class)).call().chatResponse())
+                .thenReturn(responseWith("done", 10, 5));
 
         var agent = new CoderAgent(client);
         var state = new RunState("coder-test", "fix it", workspace);
@@ -64,5 +79,17 @@ class CoderAgentTest {
         agent.run(state);
 
         assertThat(agent.lastPrompt()).contains("use a DTO");
+    }
+
+    @Test
+    void reportsRealTokenUsageFromTheResponse() throws Exception {
+        ChatClient client = mock(ChatClient.class, RETURNS_DEEP_STUBS);
+        when(client.prompt().user(any(String.class)).tools(any(Object[].class)).call().chatResponse())
+                .thenReturn(responseWith("done", 321, 123));
+
+        var agent = new CoderAgent(client);
+        var result = agent.run(new RunState("usage-test", "t", workspace));
+
+        assertThat(result.tokens()).isEqualTo(new TokenUsage(321, 123));
     }
 }

@@ -3,6 +3,7 @@ package ai.devflow.agent;
 import ai.devflow.orchestrator.RunState;
 import ai.devflow.tools.FileTools;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.model.ChatResponse;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -25,16 +26,28 @@ public class CoderAgent implements Agent {
     public AgentResult run(RunState state) {
         lastPrompt = buildPrompt(state);
 
-        String summary = chatClient.prompt()
+        ChatResponse response = chatClient.prompt()
                 .user(lastPrompt)
                 .tools(new FileTools(state.workspace().guard()), state.gitTools())
                 .call()
-                .content();
+                .chatResponse();
+
+        String summary = textOf(response);
 
         // Derived from git, never from what the model claims.
         List<String> touched = state.gitTools().changedFiles();
 
-        return AgentResult.ok(name(), summary, touched, TokenUsage.NONE);
+        return AgentResult.ok(name(), summary, touched, UsageMapper.from(response));
+    }
+
+    /** Response text, tolerating a null or empty response rather than throwing. */
+    private static String textOf(ChatResponse response) {
+        if (response == null || response.getResult() == null
+                || response.getResult().getOutput() == null) {
+            return "";
+        }
+        String text = response.getResult().getOutput().getText();
+        return text == null ? "" : text;
     }
 
     private String buildPrompt(RunState state) {

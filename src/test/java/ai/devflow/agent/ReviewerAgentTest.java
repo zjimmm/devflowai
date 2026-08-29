@@ -4,8 +4,14 @@ import ai.devflow.orchestrator.RunState;
 import ai.devflow.workspace.*;
 import org.junit.jupiter.api.*;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.metadata.ChatResponseMetadata;
+import org.springframework.ai.chat.metadata.DefaultUsage;
+import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.model.Generation;
 
 import java.nio.file.Path;
+import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
@@ -23,15 +29,24 @@ class ReviewerAgentTest {
     @AfterEach
     void tearDown() throws Exception { workspace.cleanup(); }
 
+    /** A ChatResponse carrying the given text and token counts. */
+    private static ChatResponse responseWith(String text, int promptTokens, int completionTokens) {
+        var generation = new Generation(new AssistantMessage(text));
+        var metadata = ChatResponseMetadata.builder()
+                .usage(new DefaultUsage(promptTokens, completionTokens))
+                .build();
+        return new ChatResponse(List.of(generation), metadata);
+    }
+
     @Test
     void parsesFindingsIntoNeedsWork() {
         ChatClient client = mock(ChatClient.class, RETURNS_DEEP_STUBS);
-        when(client.prompt().user(any(String.class)).tools(any()).call().content())
-                .thenReturn("""
+        when(client.prompt().user(any(String.class)).tools(any()).call().chatResponse())
+                .thenReturn(responseWith("""
                     {"status":"NEEDS_WORK","summary":"validation missing",
                      "findings":[{"severity":"HIGH","file":"UserController.java","line":14,
                                   "message":"@Valid missing on the controller parameter"}]}
-                    """);
+                    """, 10, 5));
 
         var agent = new ReviewerAgent(client);
         var state = new RunState("reviewer-test", "add validation", workspace);
@@ -46,10 +61,10 @@ class ReviewerAgentTest {
     @Test
     void cleanReviewReturnsOk() {
         ChatClient client = mock(ChatClient.class, RETURNS_DEEP_STUBS);
-        when(client.prompt().user(any(String.class)).tools(any()).call().content())
-                .thenReturn("""
+        when(client.prompt().user(any(String.class)).tools(any()).call().chatResponse())
+                .thenReturn(responseWith("""
                     {"status":"OK","summary":"looks correct","findings":[]}
-                    """);
+                    """, 10, 5));
 
         var agent = new ReviewerAgent(client);
         AgentResult result = agent.run(new RunState("r", "t", workspace));
@@ -61,8 +76,8 @@ class ReviewerAgentTest {
     @Test
     void malformedModelOutputFailsClosed() {
         ChatClient client = mock(ChatClient.class, RETURNS_DEEP_STUBS);
-        when(client.prompt().user(any(String.class)).tools(any()).call().content())
-                .thenReturn("not json at all");
+        when(client.prompt().user(any(String.class)).tools(any()).call().chatResponse())
+                .thenReturn(responseWith("not json at all", 10, 5));
 
         var agent = new ReviewerAgent(client);
         AgentResult result = agent.run(new RunState("r", "t", workspace));
@@ -80,14 +95,14 @@ class ReviewerAgentTest {
     @Test
     void markdownFencedOutputStillParses() {
         ChatClient client = mock(ChatClient.class, RETURNS_DEEP_STUBS);
-        when(client.prompt().user(any(String.class)).tools(any()).call().content())
-                .thenReturn("""
+        when(client.prompt().user(any(String.class)).tools(any()).call().chatResponse())
+                .thenReturn(responseWith("""
                     ```json
                     {"status":"NEEDS_WORK","summary":"validation missing",
                      "findings":[{"severity":"HIGH","file":"UserController.java","line":14,
                                   "message":"@Valid missing on the controller parameter"}]}
                     ```
-                    """);
+                    """, 10, 5));
 
         var agent = new ReviewerAgent(client);
         AgentResult result = agent.run(new RunState("r", "t", workspace));
@@ -106,13 +121,13 @@ class ReviewerAgentTest {
     @Test
     void trailingProseWithBracesDoesNotCorruptTheParsedResult() {
         ChatClient client = mock(ChatClient.class, RETURNS_DEEP_STUBS);
-        when(client.prompt().user(any(String.class)).tools(any()).call().content())
-                .thenReturn("""
+        when(client.prompt().user(any(String.class)).tools(any()).call().chatResponse())
+                .thenReturn(responseWith("""
                     {"status":"OK","summary":"looks correct","findings":[]}
 
                     Let me know if you'd like me to also check the `if (x) { ... }` block \
                     in the caller, or a NEEDS_WORK example: {"status":"NEEDS_WORK","summary":"bad","findings":[]}
-                    """);
+                    """, 10, 5));
 
         var agent = new ReviewerAgent(client);
         AgentResult result = agent.run(new RunState("r", "t", workspace));
@@ -129,8 +144,8 @@ class ReviewerAgentTest {
     @Test
     void emptyJsonObjectFailsClosed() {
         ChatClient client = mock(ChatClient.class, RETURNS_DEEP_STUBS);
-        when(client.prompt().user(any(String.class)).tools(any()).call().content())
-                .thenReturn("{}");
+        when(client.prompt().user(any(String.class)).tools(any()).call().chatResponse())
+                .thenReturn(responseWith("{}", 10, 5));
 
         var agent = new ReviewerAgent(client);
         AgentResult result = agent.run(new RunState("r", "t", workspace));
@@ -144,14 +159,28 @@ class ReviewerAgentTest {
     @Test
     void unrecognizedStatusValueFailsClosed() {
         ChatClient client = mock(ChatClient.class, RETURNS_DEEP_STUBS);
-        when(client.prompt().user(any(String.class)).tools(any()).call().content())
-                .thenReturn("""
+        when(client.prompt().user(any(String.class)).tools(any()).call().chatResponse())
+                .thenReturn(responseWith("""
                     {"status":"MAYBE","summary":"unsure","findings":[]}
-                    """);
+                    """, 10, 5));
 
         var agent = new ReviewerAgent(client);
         AgentResult result = agent.run(new RunState("r", "t", workspace));
 
         assertThat(result.status()).isEqualTo(AgentResult.Status.FAILED);
+    }
+
+    @Test
+    void reportsRealTokenUsageFromTheResponse() {
+        ChatClient client = mock(ChatClient.class, RETURNS_DEEP_STUBS);
+        when(client.prompt().user(any(String.class)).tools(any(Object[].class)).call().chatResponse())
+                .thenReturn(responseWith("""
+                    {"status":"NEEDS_WORK","summary":"nope",
+                     "findings":[{"severity":"HIGH","file":"A.java","line":1,"message":"x"}]}
+                    """, 500, 60));
+
+        var result = new ReviewerAgent(client).run(new RunState("u", "t", workspace));
+
+        assertThat(result.tokens()).isEqualTo(new TokenUsage(500, 60));
     }
 }
