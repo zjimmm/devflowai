@@ -69,4 +69,12 @@ public class RunState {
     public synchronized void addLoadedSkill(String name) { loadedSkills.add(name); }
     public synchronized void incrementReviewIterations() { reviewIterations++; }
     public synchronized void incrementHumanIterations() { humanIterations++; }
+
+    /**
+     * Returns one reviewer iteration. Used when a human rejection sends work
+     * back — that round is charged to humanIterations, not the reviewer's cap.
+     */
+    public synchronized void rollBackReviewIteration() {
+        if (reviewIterations > 0) reviewIterations--;
+    }
 }

@@ -28,13 +28,22 @@ class EndToEndLiveTest {
             var orchestrator = new Orchestrator(
                     new CoderAgent(coderClient),
                     new ReviewerAgent(reviewerClient),
-                    3, 5);
+                    new ai.devflow.event.RunEventPublisher(),
+                    3, 5, java.time.Duration.ofMinutes(5));
 
-            var state = new RunState("e2e",
-                    "Add input validation to UserController so a null or blank email is rejected "
-                    + "with HTTP 400. Cover it with a test.", ws);
+            var state = new RunState("e2e", "Add input validation to UserController so a null or "
+                    + "blank email is rejected with HTTP 400. Cover it with a test.", ws);
 
-            var outcome = orchestrator.run(state);
+            var gate = new ApprovalGate(java.time.Duration.ofSeconds(30));
+            var pool = java.util.concurrent.Executors.newSingleThreadExecutor();
+            java.util.concurrent.Future<Orchestrator.RunOutcome> f =
+                    pool.submit(() -> orchestrator.run(state, gate));
+            while (!f.isDone()) {
+                if (gate.pending() != null) gate.decide(ApprovalDecision.approve());
+                Thread.sleep(10);
+            }
+            var outcome = f.get();
+            pool.shutdownNow();
 
             assertThat(outcome.approved())
                     .as("reason: %s", outcome.reason())
