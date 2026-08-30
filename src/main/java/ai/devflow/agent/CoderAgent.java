@@ -11,7 +11,6 @@ import java.util.stream.Collectors;
 public class CoderAgent implements Agent {
 
     private final ChatClient chatClient;
-    private String lastPrompt = "";
 
     public CoderAgent(ChatClient chatClient) {
         this.chatClient = chatClient;
@@ -19,15 +18,12 @@ public class CoderAgent implements Agent {
 
     @Override public String name() { return "coder"; }
 
-    /** Exposed for tests — asserts that findings actually reach the model. */
-    String lastPrompt() { return lastPrompt; }
-
     @Override
     public AgentResult run(RunState state) {
-        lastPrompt = buildPrompt(state);
+        String prompt = buildPrompt(state);
 
         ChatResponse response = chatClient.prompt()
-                .user(lastPrompt)
+                .user(prompt)
                 .tools(new FileTools(state.workspace().guard()), state.gitTools())
                 .call()
                 .chatResponse();

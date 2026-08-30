@@ -3,6 +3,7 @@ package ai.devflow.agent;
 import ai.devflow.orchestrator.RunState;
 import ai.devflow.workspace.*;
 import org.junit.jupiter.api.*;
+import org.mockito.ArgumentCaptor;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.metadata.ChatResponseMetadata;
@@ -78,7 +79,17 @@ class CoderAgentTest {
 
         agent.run(state);
 
-        assertThat(agent.lastPrompt()).contains("use a DTO");
+        // client.prompt() is a no-arg call, so RETURNS_DEEP_STUBS hands back the
+        // same cached deep-stub instance every time -- including here, after the
+        // fact -- which is what makes verifying against it valid. atLeastOnce()
+        // (rather than the default times(1)) is required because the when(...)
+        // setup above is itself an invocation of .user(any(String.class)) on
+        // that same deep stub and Mockito counts it as a real invocation;
+        // getValue() then returns the *last* captured argument, i.e. the prompt
+        // actually sent by agent.run(state), which is what we care about.
+        var promptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(client.prompt(), atLeastOnce()).user(promptCaptor.capture());
+        assertThat(promptCaptor.getValue()).contains("use a DTO");
     }
 
     @Test
