@@ -88,6 +88,12 @@
       files.textContent = data.filesTouched.join('  ·  ');
       el.appendChild(files);
     }
+    if (data && (data.inputTokens !== undefined || data.outputTokens !== undefined)) {
+      const cost = document.createElement('div');
+      cost.className = 'files'; // reuse the existing muted-text style
+      cost.textContent = `${data.inputTokens || 0} input tokens · ${data.outputTokens || 0} output tokens`;
+      el.appendChild(cost);
+    }
     $('log').appendChild(el);
     el.scrollIntoView({ block: 'nearest' });
   }
