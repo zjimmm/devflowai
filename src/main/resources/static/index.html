@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>devflowai</title>
+  <style>
+    :root { color-scheme: light dark; --fg:#1a1a1a; --bg:#fbfbfa; --muted:#6b6b6b;
+            --line:#e0e0dc; --accent:#2d6a4f; --warn:#9a3412; }
+    @media (prefers-color-scheme: dark) {
+      :root { --fg:#e8e8e6; --bg:#1c1c1b; --muted:#9a9a97; --line:#333331;
+              --accent:#74c69d; --warn:#fb923c; }
+    }
+    * { box-sizing: border-box; }
+    body { margin:0; padding:2rem 1rem; background:var(--bg); color:var(--fg);
+           font:15px/1.55 ui-sans-serif, system-ui, -apple-system, sans-serif; }
+    main { max-width: 46rem; margin: 0 auto; }
+    h1 { font-size:1.1rem; letter-spacing:-0.01em; margin:0 0 1.5rem; }
+    label { display:block; font-size:0.8rem; color:var(--muted); margin-bottom:0.3rem; }
+    .row { margin-bottom:0.9rem; }
+    input, select, textarea { width:100%; padding:0.55rem 0.7rem; font:inherit;
+      color:var(--fg); background:var(--bg); border:1px solid var(--line); border-radius:6px; }
+    button { font:inherit; padding:0.5rem 1.1rem; border-radius:6px; cursor:pointer;
+      border:1px solid var(--line); background:var(--bg); color:var(--fg); }
+    button.primary { background:var(--accent); border-color:var(--accent); color:var(--bg); }
+    button:disabled { opacity:0.45; cursor:not-allowed; }
+    hr { border:0; border-top:1px solid var(--line); margin:1.5rem 0; }
+    #log { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:13px; }
+    .ev { padding:0.3rem 0; border-bottom:1px solid var(--line); }
+    .ev .t { color:var(--muted); margin-right:0.5rem; }
+    .ev.error .m, .ev.aborted .m { color:var(--warn); }
+    .ev.done .m { color:var(--accent); }
+    .files { color:var(--muted); padding-left:1.4rem; }
+    #gate { border:1px solid var(--accent); border-radius:8px; padding:1rem; margin-top:1rem; }
+    #gate h2 { font-size:0.95rem; margin:0 0 0.6rem; }
+    .hidden { display:none; }
+    .actions { display:flex; gap:0.6rem; margin-top:0.8rem; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>devflowai</h1>
+
+  <section id="start">
+    <div class="row">
+      <label for="repo">Repo</label>
+      <select id="repo"><option value="fixture">bundled fixture</option></select>
+    </div>
+    <div class="row">
+      <label for="task">Task</label>
+      <input id="task" placeholder="Add input validation to UserController and cover it with tests."
+             value="Add input validation to UserController so a null or blank email is rejected with HTTP 400. Cover it with a test.">
+    </div>
+    <button id="run" class="primary">Run</button>
+  </section>
+
+  <hr>
+
+  <section id="log"></section>
+
+  <section id="gate" class="hidden">
+    <h2 id="gate-title"></h2>
+    <div id="gate-detail" class="files"></div>
+    <div class="row" style="margin-top:0.8rem">
+      <label for="reason">reason (optional — a rejection with a reason sends it back to the coder)</label>
+      <input id="reason" placeholder="use a DTO, don't annotate the entity">
+    </div>
+    <div class="actions">
+      <button id="approve" class="primary">Approve</button>
+      <button id="reject">Reject</button>
+    </div>
+  </section>
+</main>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  let runId = null;
+
+  function log(type, message, data) {
+    const el = document.createElement('div');
+    el.className = 'ev ' + type;
+    const time = new Date().toLocaleTimeString();
+    el.innerHTML = `<span class="t">${time}</span><span class="m"></span>`;
+    el.querySelector('.m').textContent = message;
+    if (data && Array.isArray(data.filesTouched) && data.filesTouched.length) {
+      const files = document.createElement('div');
+      files.className = 'files';
+      files.textContent = data.filesTouched.join('  ·  ');
+      el.appendChild(files);
+    }
+    $('log').appendChild(el);
+    el.scrollIntoView({ block: 'nearest' });
+  }
+
+  function showGate(message, data) {
+    $('gate-title').textContent = message;
+    const files = (data && data.filesTouched) || [];
+    $('gate-detail').textContent = files.length ? files.join('\n') : '';
+    $('reason').value = '';
+    $('gate').classList.remove('hidden');
+  }
+
+  function hideGate() { $('gate').classList.add('hidden'); }
+
+  async function decide(approved) {
+    const reason = $('reason').value.trim();
+    hideGate();
+    const res = await fetch(`/api/runs/${runId}/approve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ approved, reason: reason || null })
+    });
+    if (!res.ok) log('error', `Could not submit that decision (HTTP ${res.status})`);
+  }
+
+  $('approve').onclick = () => decide(true);
+  $('reject').onclick = () => decide(false);
+
+  $('run').onclick = async () => {
+    const task = $('task').value.trim();
+    if (!task) return;
+    $('run').disabled = true;
+    $('log').innerHTML = '';
+    hideGate();
+
+    const res = await fetch('/api/runs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ task, repo: $('repo').value })
+    });
+    if (!res.ok) {
+      log('error', `Could not start the run (HTTP ${res.status})`);
+      $('run').disabled = false;
+      return;
+    }
+    runId = (await res.json()).runId;
+    log('step', `Run ${runId} started`);
+
+    const source = new EventSource(`/api/runs/${runId}/stream`);
+    const onEvent = (e) => {
+      const payload = JSON.parse(e.data);
+      if (payload.type === 'gate') showGate(payload.message, payload.data);
+      else log(payload.type, payload.message, payload.data);
+      if (payload.type === 'done' || payload.type === 'error' || payload.type === 'aborted') {
+        source.close();
+        $('run').disabled = false;
+      }
+    };
+    ['step', 'gate', 'done', 'error', 'aborted', 'warn'].forEach(n => source.addEventListener(n, onEvent));
+    source.onerror = () => { source.close(); $('run').disabled = false; };
+  };
+</script>
+</body>
+</html>
