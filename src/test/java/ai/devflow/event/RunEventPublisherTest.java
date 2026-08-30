@@ -1,8 +1,11 @@
 package ai.devflow.event;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitter;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -58,6 +61,37 @@ class RunEventPublisherTest {
 
         publisher.publish("run-3", RunEvent.of("step", "two"));
         assertThat(attempts.get()).isEqualTo(1);
+    }
+
+    @Test
+    void aLateSubscriberReceivesEventsPublishedBeforeItConnected() {
+        var publisher = new RunEventPublisher();
+        List<RunEvent> received = new ArrayList<>();
+        // Same interception style as aFailingEmitterIsDroppedRatherThanBreakingTheRun
+        // above, but recovering the actual RunEvent that was sent rather than
+        // just counting attempts: SseEmitter.event()...data(event) stores the
+        // RunEvent object itself in the builder until send() is called, so
+        // build() hands it straight back.
+        SseEmitter capturing = new SseEmitter() {
+            @Override
+            public void send(SseEventBuilder builder) {
+                for (ResponseBodyEmitter.DataWithMediaType part : builder.build()) {
+                    if (part.getData() instanceof RunEvent event) {
+                        received.add(event);
+                    }
+                }
+            }
+        };
+
+        // Nobody has subscribed to "run-4" yet -- publish() has nowhere to send
+        // these, so they must be buffered rather than dropped on the floor.
+        publisher.publish("run-4", RunEvent.of("step", "one"));
+        publisher.publish("run-4", RunEvent.of("step", "two"));
+        publisher.publish("run-4", RunEvent.of("gate", "three"));
+
+        publisher.subscribe("run-4", capturing);
+
+        assertThat(received).extracting(RunEvent::message).containsExactly("one", "two", "three");
     }
 
     @Test

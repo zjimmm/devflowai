@@ -58,8 +58,6 @@ public class Orchestrator {
     }
 
     private RunOutcome execute(RunState state, ApprovalGate gate) {
-        String runId = state.runId();
-
         emit(state, "step", "Workspace ready — branch " + state.workspace().branchName(),
                 Map.of("branch", state.workspace().branchName()));
 
