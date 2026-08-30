@@ -11,3 +11,7 @@ devflowai:
     max-human-iterations: 5
   gate:
     timeout-minutes: 10
+  build:
+    timeout-minutes: 5
+  fixture:
+    path: src/test/resources/fixture
