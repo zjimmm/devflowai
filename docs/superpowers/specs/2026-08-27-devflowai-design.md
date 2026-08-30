@@ -273,7 +273,7 @@ One page, three states: *idle* → *streaming* → *paused at a gate* → stream
 │      ↳ loaded skill: spring-controller-validation  │
 │  ● Coder — writing…                                │
 │                                                    │
-│  ⏸  ABOUT TO WRITE 3 FILES                         │
+│  ⏸  ABOUT TO RUN THE BUILD — 3 files changed       │
 │       UserRequest.java        (new)                │
 │       UserController.java     (modified)           │
 │       UserControllerTest.java (new)                │
@@ -282,6 +282,12 @@ One page, three states: *idle* → *streaming* → *paused at a gate* → stream
 │                     [ Approve ]    [ Reject ]      │
 └────────────────────────────────────────────────────┘
 ```
+
+**Gate 1 is a pre-flight confirmation, not a file-write guard.** Before the
+coder's first call no file list exists — the model decides what to write during
+its turn. Gate 1 shows the repo, branch and task, and confirms "spend Opus 5
+tokens on this"; the file list appears at Gate 2, where it is real. Filesystem
+safety is `PathGuard` (§9), not a gate.
 
 Everything above the divider is driven by the SSE stream. The two buttons
 `POST /approve`. No other endpoint is reachable from the UI.

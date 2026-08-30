@@ -18,6 +18,22 @@ No gradle.properties setting can substitute for this.
     ./gradlew test          # full suite; most tests stub ChatClient and cost nothing
     ./gradlew bootRun       # also needs ANTHROPIC_API_KEY in the environment
 
+## Running it
+
+    export JAVA_HOME=/opt/homebrew/opt/openjdk@21
+    export ANTHROPIC_API_KEY=<key>
+    ./gradlew bootRun
+
+Then open http://localhost:8080. Type a task, click Run, approve at each of the
+three gates. A rejection with a reason sends the work back to the coder instead
+of ending the run.
+
+Endpoints (the page uses these three and nothing else):
+
+    POST /api/runs                  {"task": "...", "repo": "fixture"} -> {"runId": "..."}
+    GET  /api/runs/{id}/stream      Server-Sent Events
+    POST /api/runs/{id}/approve     {"approved": true|false, "reason": "..."|null}
+
 ## Non-negotiables
 
 - **Pin every model explicitly — never rely on the starter's default.** Static
@@ -46,6 +62,14 @@ No gradle.properties setting can substitute for this.
 - **Agents never call each other.** They return to the orchestrator, which decides
   what runs next.
 - **This repo is public.** No API key in any tracked file, ever.
+- **Agents are singleton beans and must stay stateless.** Everything per-run
+  arrives via `RunState` — including its `GitTools`. An agent that caches a
+  workspace or tool in a field will silently operate on the wrong run.
+- **The orchestrator cleans up the workspace on every exit path** — approved,
+  rejected, timed out, or thrown. If you add an early return to
+  `Orchestrator.run`, it must stay inside the try/finally.
+- **A run with an empty changeset is never approved.** `approved = true` is a
+  claim shown to an operator; it must mean real, reviewed changes exist.
 
 ## Architecture in one paragraph
 
