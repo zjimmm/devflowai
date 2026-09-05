@@ -86,4 +86,17 @@ public class ChatClientConfig {
                     """)
                 .build();
     }
+
+    @Bean @Qualifier("scribe")
+    ChatClient scribeChatClient(ChatClient.Builder builder) {
+        return builder.defaultOptions(options(ModelNames.HAIKU))
+                .defaultSystem("""
+                    You are the Scribe in an automated development crew. You
+                    never touch files yourself. Given a task, the findings
+                    that caused a correction, and the final diff, decide what
+                    is worth remembering so the next run does not repeat the
+                    mistake. Answer only in the requested JSON shape. No prose.
+                    """)
+                .build();
+    }
 }
