@@ -68,10 +68,14 @@ class OrchestratorTest {
         final List<SkillIndexEntry> entries;
         final Map<String, String> full = new HashMap<>();
         final List<SkillDraft> written = new ArrayList<>();
+        final List<String> readFullCalls = new ArrayList<>();
         FakeSkillStore() { this(List.of()); }
         FakeSkillStore(List<SkillIndexEntry> entries) { this.entries = entries; }
         @Override public List<SkillIndexEntry> index(String repoSlug) { return entries; }
-        @Override public String readFull(String repoSlug, String name) { return full.getOrDefault(name, ""); }
+        @Override public String readFull(String repoSlug, String name) {
+            readFullCalls.add(name);
+            return full.getOrDefault(name, "");
+        }
         @Override public String write(String repoSlug, String runId, SkillDraft draft) {
             written.add(draft);
             return SkillFileFormat.render(draft, runId);
@@ -287,6 +291,33 @@ class OrchestratorTest {
     }
 
     @Test
+    void aPickerNameNotInTheIndexIsNeverLoaded() throws Exception {
+        // Defense in depth: SkillPickerAgent.parse doesn't validate its own
+        // output against the index it was given, so a hallucinated (or
+        // otherwise invalid) name must be filtered out here rather than
+        // handed to skillStore.readFull.
+        var coder = writingCoder("done");
+        var reviewer = new ScriptedAgent("reviewer",
+                List.of(AgentResult.ok("reviewer", "ok", List.of(), TokenUsage.NONE)));
+
+        var skillStore = new FakeSkillStore(
+                List.of(new SkillIndexEntry("real-skill", "desc", List.of("x"))));
+        skillStore.full.put("real-skill", "## Steps\n1. Do it\n");
+        SkillPicker picker = (task, index) -> List.of("hallucinated-skill");
+
+        var state = new RunState("g21", "t", workspace);
+        var gate = new ApprovalGate(Duration.ofSeconds(10));
+        var orchestrator = orchestrator(coder, reviewer, picker, (s, f, r) -> ScribeDraft.EMPTY, skillStore, new FakeMemoryStore());
+
+        runApprovingAll(orchestrator, state, gate);
+
+        assertThat(state.loadedSkills()).isEmpty();
+        assertThat(skillStore.readFullCalls)
+                .as("a name not in the index must be filtered out before ever reaching readFull")
+                .doesNotContain("hallucinated-skill");
+    }
+
+    @Test
     void emptySkillIndexNeverInvokesThePicker() throws Exception {
         var coder = writingCoder("done");
         var reviewer = new ScriptedAgent("reviewer",
@@ -447,6 +478,9 @@ class OrchestratorTest {
         assertThat(outcome.approved())
                 .as("Gate 3 alone commits validated code even on a bare rejection -- spec §5.2's Gate-3 row")
                 .isTrue();
+        assertThat(outcome.reason())
+                .as("the outcome reason must reflect that the lesson was declined, not claim full approval")
+                .containsIgnoringCase("declined");
         assertThat(skillStore.written).isEmpty();
     }
 }

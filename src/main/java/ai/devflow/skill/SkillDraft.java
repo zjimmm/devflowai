@@ -6,6 +6,17 @@ public record SkillDraft(String name, String description, List<String> triggers,
 
     /** Filename-safe slug, used to match "an existing skill by name" (spec §6.3). */
     public String slug() {
+        return slugify(name);
+    }
+
+    /**
+     * Filename-safe slug for an arbitrary name. Shared by {@link #slug()} and
+     * by {@code FileSkillStore.readFull}, which must resolve the same file
+     * that {@code FileSkillStore.write} created -- the name reported back by
+     * {@code index()}/the picker is the raw frontmatter {@code name:} field,
+     * not the slug the file was actually written under.
+     */
+    public static String slugify(String name) {
         String s = name.toLowerCase().trim().replaceAll("[^a-z0-9]+", "-");
         return s.replaceAll("(^-+|-+$)", "");
     }

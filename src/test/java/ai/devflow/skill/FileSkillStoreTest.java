@@ -62,6 +62,22 @@ class FileSkillStoreTest {
     }
 
     @Test
+    void readFullResolvesARawHumanReadableNameToItsSlugifiedFile() {
+        // index() reports frontmatter's `name:` field verbatim (whatever the
+        // Scribe wrote, e.g. "Add Validation"), but write() stores the file
+        // under the slug ("add-validation.md"). readFull() must accept the
+        // raw name -- exactly what index()/the picker hand back -- and still
+        // find the file.
+        var draft = new SkillDraft("Add Validation", "d", List.of(), "## Steps\n1. Validate it\n");
+        store.write("fixture", "run-1", draft);
+
+        String full = store.readFull("fixture", "Add Validation");
+
+        assertThat(full).isNotBlank();
+        assertThat(full).contains("## Steps\n1. Validate it\n");
+    }
+
+    @Test
     void differentReposAreIsolated() {
         store.write("repo-a", "run-1", new SkillDraft("s", "d", List.of(), "a"));
         store.write("repo-b", "run-1", new SkillDraft("s", "d", List.of(), "b"));

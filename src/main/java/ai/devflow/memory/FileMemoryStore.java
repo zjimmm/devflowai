@@ -12,7 +12,7 @@ public class FileMemoryStore implements MemoryStore {
     public FileMemoryStore(Path root) { this.root = root; }
 
     @Override
-    public String read(String repoSlug) {
+    public synchronized String read(String repoSlug) {
         Path file = root.resolve(repoSlug + ".md");
         try {
             return Files.exists(file) ? Files.readString(file) : "";
@@ -22,7 +22,7 @@ public class FileMemoryStore implements MemoryStore {
     }
 
     @Override
-    public String append(String repoSlug, String fact) {
+    public synchronized String append(String repoSlug, String fact) {
         String existing = read(repoSlug);
         String line = "- " + fact.strip();
         if (existing.lines().anyMatch(l -> l.strip().equals(line))) {

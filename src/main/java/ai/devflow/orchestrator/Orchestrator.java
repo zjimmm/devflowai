@@ -184,6 +184,7 @@ public class Orchestrator {
                     ? scribe.draft(state, state.allFindings(), null)
                     : ScribeDraft.EMPTY;
             state.setPendingScribeDraft(draft);
+            boolean draftDeclinedByBareRejection = false;
 
             while (true) {
                 emit(state, "gate", "About to commit " + changed.size() + " file(s)",
@@ -199,6 +200,7 @@ public class Orchestrator {
                     // Gates 1/2, where an unreasoned rejection aborts.
                     draft = ScribeDraft.EMPTY;
                     state.setPendingScribeDraft(draft);
+                    draftDeclinedByBareRejection = true;
                     emit(state, "step", "Operator declined the lesson; committing the code anyway", Map.of());
                     break;
                 }
@@ -243,7 +245,10 @@ public class Orchestrator {
                     Map.of("branch", state.workspace().branchName(),
                            "inputTokens", state.totalTokens().input(),
                            "outputTokens", state.totalTokens().output()));
-            return new RunOutcome(true, "Approved by reviewer and operator", state);
+            String outcomeReason = draftDeclinedByBareRejection
+                    ? "Committed by operator; declined the proposed lesson"
+                    : "Approved by reviewer and operator";
+            return new RunOutcome(true, outcomeReason, state);
         }
 
         String reason = lastReview == null
@@ -328,7 +333,10 @@ public class Orchestrator {
         List<SkillIndexEntry> index = skillStore.index(repoSlug);
         if (index.isEmpty()) return; // never spend a call picking from nothing
 
-        List<String> names = skillPicker.pick(state.task(), index);
+        List<String> validNames = index.stream().map(SkillIndexEntry::name).toList();
+        List<String> names = skillPicker.pick(state.task(), index).stream()
+                .filter(validNames::contains)
+                .toList();
         for (String name : names) {
             String full = skillStore.readFull(repoSlug, name);
             if (!full.isBlank()) state.addLoadedSkill(full);

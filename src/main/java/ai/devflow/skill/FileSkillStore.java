@@ -22,7 +22,7 @@ public class FileSkillStore implements SkillStore {
     public FileSkillStore(Path root) { this.root = root; }
 
     @Override
-    public List<SkillIndexEntry> index(String repoSlug) {
+    public synchronized List<SkillIndexEntry> index(String repoSlug) {
         Path dir = root.resolve(repoSlug);
         if (!Files.isDirectory(dir)) return List.of();
         try (Stream<Path> files = Files.list(dir)) {
@@ -38,8 +38,8 @@ public class FileSkillStore implements SkillStore {
     }
 
     @Override
-    public String readFull(String repoSlug, String name) {
-        Path file = root.resolve(repoSlug).resolve(name + ".md");
+    public synchronized String readFull(String repoSlug, String name) {
+        Path file = root.resolve(repoSlug).resolve(SkillDraft.slugify(name) + ".md");
         try {
             return Files.exists(file) ? Files.readString(file) : "";
         } catch (IOException e) {
@@ -48,7 +48,7 @@ public class FileSkillStore implements SkillStore {
     }
 
     @Override
-    public String write(String repoSlug, String runId, SkillDraft draft) {
+    public synchronized String write(String repoSlug, String runId, SkillDraft draft) {
         String rendered = SkillFileFormat.render(draft, runId);
         Path dir = root.resolve(repoSlug);
         try {
