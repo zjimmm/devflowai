@@ -70,7 +70,8 @@ class RunControllerTest {
         mvc.perform(post("/api/runs")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json.writeValueAsString(new StartRunRequest("do a thing", "ext::sh -c \"true\""))))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("Repo must be an https:// URL, got: ext::sh -c \"true\""));
     }
 
     @Test
