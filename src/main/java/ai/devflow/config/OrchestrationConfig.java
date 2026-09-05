@@ -51,6 +51,16 @@ public class OrchestrationConfig {
         return new ReviewerAgent(reviewerWorker);
     }
 
+    @Bean @Qualifier("planner")
+    CodingWorker plannerWorker(@Qualifier("planner") ChatClient plannerChatClient) {
+        return new SpringAiCodingWorker(plannerChatClient);
+    }
+
+    @Bean
+    Agent plannerAgent(@Qualifier("planner") CodingWorker plannerWorker) {
+        return new PlannerAgent(plannerWorker);
+    }
+
     @Bean
     SkillPicker skillPickerAgent(@Qualifier("router") ChatClient routerChatClient) {
         return new SkillPickerAgent(routerChatClient);
@@ -83,12 +93,12 @@ public class OrchestrationConfig {
     }
 
     @Bean
-    Orchestrator orchestrator(Agent coderAgent, Agent reviewerAgent, SkillPicker skillPicker, Scribe scribe,
+    Orchestrator orchestrator(Agent coderAgent, Agent reviewerAgent, Agent plannerAgent, SkillPicker skillPicker, Scribe scribe,
                               SkillStore skillStore, MemoryStore memoryStore, RunEventPublisher events,
                               @Value("${devflowai.review.max-iterations:3}") int maxReviewIterations,
                               @Value("${devflowai.review.max-human-iterations:5}") int maxHumanIterations,
                               @Value("${devflowai.build.timeout-minutes:5}") long buildTimeoutMinutes) {
-        return new Orchestrator(coderAgent, reviewerAgent, skillPicker, scribe, skillStore, memoryStore,
+        return new Orchestrator(coderAgent, reviewerAgent, plannerAgent, skillPicker, scribe, skillStore, memoryStore,
                 events, maxReviewIterations, maxHumanIterations, Duration.ofMinutes(buildTimeoutMinutes));
     }
 

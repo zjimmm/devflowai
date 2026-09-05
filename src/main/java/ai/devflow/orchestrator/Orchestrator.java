@@ -34,6 +34,7 @@ public class Orchestrator {
 
     private final Agent coder;
     private final Agent reviewer;
+    private final Agent planner;
     private final SkillPicker skillPicker;
     private final Scribe scribe;
     private final SkillStore skillStore;
@@ -43,12 +44,13 @@ public class Orchestrator {
     private final int maxHumanIterations;
     private final Duration buildTimeout;
 
-    public Orchestrator(Agent coder, Agent reviewer, SkillPicker skillPicker, Scribe scribe,
+    public Orchestrator(Agent coder, Agent reviewer, Agent planner, SkillPicker skillPicker, Scribe scribe,
                         SkillStore skillStore, MemoryStore memoryStore,
                         RunEventPublisher events, int maxReviewIterations, int maxHumanIterations,
                         Duration buildTimeout) {
         this.coder = coder;
         this.reviewer = reviewer;
+        this.planner = planner;
         this.skillPicker = skillPicker;
         this.scribe = scribe;
         this.skillStore = skillStore;
@@ -104,6 +106,13 @@ public class Orchestrator {
                 return aborted(state, "Rejected at pre-flight");
             }
         }
+
+        // ---- Planner: once per run, after Gate 1 (spec §5) ----------------
+        emit(state, "step", "Planner — thinking…", Map.of());
+        AgentResult planned = planner.run(state);
+        state.record(planned);
+        state.setPlan(planned.summary());
+        emit(state, "step", "Planner — plan ready", Map.of("plan", planned.summary()));
 
         AgentResult lastReview = null;
 

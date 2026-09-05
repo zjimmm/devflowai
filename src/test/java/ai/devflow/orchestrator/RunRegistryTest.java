@@ -44,7 +44,7 @@ class RunRegistryTest {
     @BeforeEach
     void setUp() {
         var events = new RunEventPublisher();
-        var orchestrator = new Orchestrator(new StubAgent("coder"), new StubAgent("reviewer"),
+        var orchestrator = new Orchestrator(new StubAgent("coder"), new StubAgent("reviewer"), new StubAgent("planner"),
                 (task, index) -> List.of(), (state, findings, reason) -> ScribeDraft.EMPTY,
                 new NoOpSkillStore(), new NoOpMemoryStore(),
                 events, 3, 5, Duration.ofMinutes(1));

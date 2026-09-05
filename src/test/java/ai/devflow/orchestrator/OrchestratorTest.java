@@ -24,6 +24,7 @@ class OrchestratorTest {
     Workspace workspace;
     RunEventPublisher events;
     ExecutorService pool;
+    Agent planner = defaultPlanner();
 
     @BeforeEach
     void setUp() throws Exception {
@@ -51,6 +52,15 @@ class OrchestratorTest {
             calls++;
             return script.get(Math.min(i++, script.size() - 1));
         }
+    }
+
+    static Agent defaultPlanner() {
+        return new Agent() {
+            @Override public String name() { return "planner"; }
+            @Override public AgentResult run(RunState s) {
+                return AgentResult.ok("planner", "plan", List.of(), TokenUsage.NONE);
+            }
+        };
     }
 
     /** Throws on every call — stands in for a 429 or a dropped connection. */
@@ -110,7 +120,7 @@ class OrchestratorTest {
 
     private Orchestrator orchestrator(Agent coder, Agent reviewer, SkillPicker picker, Scribe scribe,
                                       SkillStore skillStore, MemoryStore memoryStore) {
-        return new Orchestrator(coder, reviewer, picker, scribe, skillStore, memoryStore,
+        return new Orchestrator(coder, reviewer, planner, picker, scribe, skillStore, memoryStore,
                 events, 3, 5, Duration.ofMinutes(1));
     }
 
@@ -519,5 +529,57 @@ class OrchestratorTest {
                 .as("the outcome reason must reflect that the lesson was declined, not claim full approval")
                 .containsIgnoringCase("declined");
         assertThat(skillStore.written).isEmpty();
+    }
+
+    @Test
+    void plannerRunsExactlyOnceEvenAcrossMultipleReviewIterations() throws Exception {
+        var coder = writingCoder("attempt");
+        var bounce = AgentResult.needsWork("reviewer", "nope",
+                List.of(new Finding(Finding.Origin.REVIEWER, Finding.Severity.HIGH, "A.java", 1, "still wrong")), TokenUsage.NONE);
+        var ok = AgentResult.ok("reviewer", "looks good now", List.of(), TokenUsage.NONE);
+        var reviewer = new ScriptedAgent("reviewer", List.of(bounce, ok));
+        var plannerCalls = new AtomicInteger(0);
+        planner = new Agent() {
+            @Override public String name() { return "planner"; }
+            @Override public AgentResult run(RunState s) {
+                plannerCalls.incrementAndGet();
+                return AgentResult.ok("planner", "1. Add validation\n2. Add a test", List.of(), TokenUsage.NONE);
+            }
+        };
+        var state = new RunState("g22", "t", workspace);
+        var gate = new ApprovalGate(Duration.ofSeconds(10));
+
+        var outcome = runApprovingAll(orchestrator(coder, reviewer), state, gate);
+
+        assertThat(outcome.approved()).isTrue();
+        assertThat(state.reviewIterations()).isEqualTo(2);
+        assertThat(plannerCalls.get())
+                .as("planner is a once-per-run artifact, not re-derived each review iteration")
+                .isEqualTo(1);
+        assertThat(state.plan()).isEqualTo("1. Add validation\n2. Add a test");
+    }
+
+    @Test
+    void plannerNeverRunsIfPreFlightIsRejected() throws Exception {
+        var coder = writingCoder("should never run");
+        var reviewer = new ScriptedAgent("reviewer",
+                List.of(AgentResult.ok("reviewer", "ok", List.of(), TokenUsage.NONE)));
+        var plannerCalls = new AtomicInteger(0);
+        planner = new Agent() {
+            @Override public String name() { return "planner"; }
+            @Override public AgentResult run(RunState s) {
+                plannerCalls.incrementAndGet();
+                return AgentResult.ok("planner", "p", List.of(), TokenUsage.NONE);
+            }
+        };
+        var state = new RunState("g23", "t", workspace);
+        var gate = new ApprovalGate(Duration.ofSeconds(10));
+
+        Future<Orchestrator.RunOutcome> f = pool.submit(() -> orchestrator(coder, reviewer).run(state, gate));
+        while (gate.pending() == null) Thread.sleep(5);
+        gate.decide(ApprovalDecision.reject());
+
+        assertThat(f.get(10, TimeUnit.SECONDS).approved()).isFalse();
+        assertThat(plannerCalls.get()).isZero();
     }
 }

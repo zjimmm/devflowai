@@ -37,6 +37,7 @@ public class RunState {
     private TokenUsage totalTokens = TokenUsage.NONE;
     private RunPhase phase = RunPhase.PREPARING;
     private String memory = "";
+    private String plan = "";
     private ScribeDraft pendingScribeDraft = ScribeDraft.EMPTY;
 
     public RunState(String runId, String task, Workspace workspace) {
@@ -65,6 +66,7 @@ public class RunState {
     public synchronized List<String> loadedSkills() { return List.copyOf(loadedSkills); }
     public synchronized List<Finding> allFindings() { return List.copyOf(allFindings); }
     public synchronized String memory() { return memory; }
+    public synchronized String plan() { return plan; }
     public synchronized ScribeDraft pendingScribeDraft() { return pendingScribeDraft; }
     public synchronized int reviewIterations() { return reviewIterations; }
     public synchronized int humanIterations() { return humanIterations; }
@@ -73,6 +75,7 @@ public class RunState {
 
     public synchronized void setPhase(RunPhase phase) { this.phase = phase; }
     public synchronized void setMemory(String memory) { this.memory = memory == null ? "" : memory; }
+    public synchronized void setPlan(String plan) { this.plan = plan == null ? "" : plan; }
     public synchronized void setPendingScribeDraft(ScribeDraft draft) {
         this.pendingScribeDraft = draft == null ? ScribeDraft.EMPTY : draft;
     }

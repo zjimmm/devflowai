@@ -65,6 +65,17 @@ public class ChatClientConfig {
                 .build();
     }
 
+    @Bean @Qualifier("planner")
+    ChatClient plannerChatClient(ChatClient.Builder builder) {
+        return builder.defaultOptions(opusOptions(ModelNames.OPUS))
+                .defaultSystem("""
+                    You are the Planner in an automated development crew.
+                    Read the task and write a short, concrete plan for the coder to follow.
+                    Do not write any code yourself. Answer in plain text, not JSON.
+                    """)
+                .build();
+    }
+
     @Bean @Qualifier("reviewer")
     ChatClient reviewerChatClient(ChatClient.Builder builder) {
         return builder.defaultOptions(opusOptions(ModelNames.OPUS))

@@ -87,6 +87,9 @@ class RunFlowIntegrationTest {
     @TestBean(name = "reviewerAgent", methodName = "stubReviewerAgent")
     Agent reviewerAgentOverride;
 
+    @TestBean(name = "plannerAgent", methodName = "stubPlannerAgent")
+    Agent plannerAgentOverride;
+
     @TestBean(name = "scribeAgent", methodName = "stubScribeAgent")
     Scribe scribeAgentOverride;
 
@@ -122,6 +125,15 @@ class RunFlowIntegrationTest {
                             TokenUsage.NONE);
                 }
                 return AgentResult.ok("reviewer", "looks correct", List.of(), TokenUsage.NONE);
+            }
+        };
+    }
+
+    static Agent stubPlannerAgent() {
+        return new Agent() {
+            @Override public String name() { return "planner"; }
+            @Override public AgentResult run(RunState s) {
+                return AgentResult.ok("planner", "1. Make the change\n2. Verify it", List.of(), TokenUsage.NONE);
             }
         };
     }

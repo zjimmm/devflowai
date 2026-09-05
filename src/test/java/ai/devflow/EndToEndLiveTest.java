@@ -20,6 +20,7 @@ class EndToEndLiveTest {
 
     @Autowired @Qualifier("coder")    ChatClient coderClient;
     @Autowired @Qualifier("reviewer") ChatClient reviewerClient;
+    @Autowired @Qualifier("planner")  ChatClient plannerClient;
 
     @Test
     void addsValidationToTheFixtureAndPassesReview() throws Exception {
@@ -29,6 +30,7 @@ class EndToEndLiveTest {
             var orchestrator = new Orchestrator(
                     new CoderAgent(new SpringAiCodingWorker(coderClient)),
                     new ReviewerAgent(new SpringAiCodingWorker(reviewerClient)),
+                    new PlannerAgent(new SpringAiCodingWorker(plannerClient)),
                     (task, index) -> java.util.List.of(),
                     (state, findings, reason) -> ai.devflow.skill.ScribeDraft.EMPTY,
                     new ai.devflow.skill.SkillStore() {
