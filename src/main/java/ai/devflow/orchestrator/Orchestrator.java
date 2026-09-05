@@ -8,11 +8,16 @@ import ai.devflow.agent.SkillPicker;
 import ai.devflow.event.RunEvent;
 import ai.devflow.event.RunEventPublisher;
 import ai.devflow.memory.MemoryStore;
+import ai.devflow.skill.ScribeDraft;
 import ai.devflow.skill.SkillIndexEntry;
 import ai.devflow.skill.SkillStore;
 import ai.devflow.tools.BuildTools;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -102,6 +107,7 @@ public class Orchestrator {
 
         AgentResult lastReview = null;
 
+        reviewLoop:
         while (state.reviewIterations() < maxReviewIterations) {
             state.incrementReviewIterations();
 
@@ -169,29 +175,65 @@ public class Orchestrator {
 
             // ---- Gate 3: before the commit --------------------------------
             // C1-b: a run that changed nothing must never be reported approved.
-            // Nothing was disguised here (filesTouched is visibly empty), but
-            // approved=true is an operator-facing claim, so refuse it.
             if (changed.isEmpty()) {
                 return failed(state, "Refusing to approve: the coder made no changes");
             }
 
-            emit(state, "gate", "About to commit " + changed.size() + " file(s)", Map.of(
-                    "gate", Gate.BEFORE_COMMIT.name(),
-                    "filesTouched", changed,
-                    "buildPassed", build.success()));
-            ApprovalDecision beforeCommit = gate.await(Gate.BEFORE_COMMIT);
-            if (!beforeCommit.approved()) {
-                if (beforeCommit.hasReason() && state.humanIterations() < maxHumanIterations) {
-                    state.addFindings(List.of(Finding.fromHuman(beforeCommit.reason())));
-                    state.incrementHumanIterations();
-                    decrementReviewIteration(state);
-                    emit(state, "step", "Operator sent it back: " + beforeCommit.reason(), Map.of());
-                    continue;
+            boolean shouldExtract = state.reviewIterations() >= 2 || state.humanIterations() >= 1;
+            ScribeDraft draft = shouldExtract
+                    ? scribe.draft(state, state.allFindings(), null)
+                    : ScribeDraft.EMPTY;
+            state.setPendingScribeDraft(draft);
+
+            while (true) {
+                emit(state, "gate", "About to commit " + changed.size() + " file(s)",
+                        gate3Data(changed, build.success(), draft));
+                ApprovalDecision beforeCommit = gate.await(Gate.BEFORE_COMMIT);
+
+                if (beforeCommit.approved()) break;
+
+                if (!beforeCommit.hasReason()) {
+                    // Gate 3 alone: the code is already reviewed and built, so
+                    // an unreasoned rejection commits it anyway and discards
+                    // only the draft -- spec §5.2's Gate-3 row differs from
+                    // Gates 1/2, where an unreasoned rejection aborts.
+                    draft = ScribeDraft.EMPTY;
+                    state.setPendingScribeDraft(draft);
+                    emit(state, "step", "Operator declined the lesson; committing the code anyway", Map.of());
+                    break;
                 }
-                return aborted(state, "Rejected before the commit");
+
+                if (state.humanIterations() >= maxHumanIterations) {
+                    return aborted(state, "Rejected before the commit");
+                }
+                state.incrementHumanIterations();
+
+                if (!draft.isEmpty()) {
+                    draft = scribe.draft(state, state.allFindings(), beforeCommit.reason());
+                    state.setPendingScribeDraft(draft);
+                    emit(state, "step", "Operator asked for a different lesson: " + beforeCommit.reason(), Map.of());
+                    continue; // re-show Gate 3 with the revised draft only -- the coder is not re-invoked
+                }
+
+                // Nothing was learned this run -- the objection must be about the code.
+                state.addFindings(List.of(Finding.fromHuman(beforeCommit.reason())));
+                decrementReviewIteration(state);
+                emit(state, "step", "Operator sent it back: " + beforeCommit.reason(), Map.of());
+                continue reviewLoop;
             }
 
-            // ---- Commit ---------------------------------------------------
+            // ---- Persist the (possibly empty) draft, then commit -----------
+            if (!draft.isEmpty()) {
+                if (draft.skill() != null) {
+                    skillStore.write(repoSlug, state.runId(), draft.skill());
+                    writeIntoWorkspace(state, draft.skill());
+                }
+                if (draft.memoryFact() != null && !draft.memoryFact().isBlank()) {
+                    String updated = memoryStore.append(repoSlug, draft.memoryFact());
+                    writeMemoryIntoWorkspace(state, updated);
+                }
+            }
+
             state.setPhase(RunPhase.COMMITTING);
             String committed = state.gitTools().commit("devflowai: " + state.task());
             emit(state, "step", committed, Map.of());
@@ -218,6 +260,48 @@ public class Orchestrator {
      */
     private void decrementReviewIteration(RunState state) {
         if (state.reviewIterations() > 0) state.rollBackReviewIteration();
+    }
+
+    private Map<String, Object> gate3Data(List<String> changed, boolean buildPassed, ScribeDraft draft) {
+        Map<String, Object> data = new HashMap<>();
+        data.put("gate", Gate.BEFORE_COMMIT.name());
+        data.put("filesTouched", changed);
+        data.put("buildPassed", buildPassed);
+        if (draft.skill() != null) {
+            data.put("skillDraft", Map.of("name", draft.skill().name(), "description", draft.skill().description()));
+        }
+        if (draft.memoryFact() != null && !draft.memoryFact().isBlank()) {
+            data.put("memoryFact", draft.memoryFact());
+        }
+        return data;
+    }
+
+    /**
+     * Best-effort: a write failure here must not block an already-validated
+     * commit. Not independently tested against a post-run filesystem check --
+     * the workspace is deleted by cleanUp() before any external test could
+     * observe it; SkillStore.write() being called with the right draft (see
+     * OrchestratorTest) is the externally-observable proof this ran.
+     */
+    private void writeIntoWorkspace(RunState state, ai.devflow.skill.SkillDraft skill) {
+        try {
+            Path dir = state.workspace().root().resolve(".devflowai/skills");
+            Files.createDirectories(dir);
+            Files.writeString(dir.resolve(skill.slug() + ".md"),
+                    ai.devflow.skill.SkillFileFormat.render(skill, state.runId()));
+        } catch (IOException e) {
+            events.publish(state.runId(), RunEvent.of("warn", "Could not write the skill into the branch: " + e.getMessage()));
+        }
+    }
+
+    private void writeMemoryIntoWorkspace(RunState state, String updatedMemoryContent) {
+        try {
+            Path dir = state.workspace().root().resolve(".devflowai");
+            Files.createDirectories(dir);
+            Files.writeString(dir.resolve("memory.md"), updatedMemoryContent);
+        } catch (IOException e) {
+            events.publish(state.runId(), RunEvent.of("warn", "Could not write memory.md into the branch: " + e.getMessage()));
+        }
     }
 
     private RunOutcome aborted(RunState state, String reason) {

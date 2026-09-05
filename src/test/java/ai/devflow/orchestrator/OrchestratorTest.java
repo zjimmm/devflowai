@@ -302,4 +302,151 @@ class OrchestratorTest {
 
         assertThat(outcome.approved()).isTrue();
     }
+
+    /** Approves every gate up to (but not including) the given gate, then returns with that gate pending. */
+    private void approveUntil(ApprovalGate gate, Future<?> outcome, Gate target) throws Exception {
+        long deadline = System.currentTimeMillis() + 20_000;
+        while (gate.pending() != target) {
+            if (System.currentTimeMillis() > deadline) throw new AssertionError("gate " + target + " never arrived");
+            if (gate.pending() != null) gate.decide(ApprovalDecision.approve());
+            Thread.sleep(5);
+        }
+    }
+
+    @Test
+    void cleanFirstPassRunNeverInvokesTheScribe() throws Exception {
+        var coder = writingCoder("done");
+        var reviewer = new ScriptedAgent("reviewer",
+                List.of(AgentResult.ok("reviewer", "looks good", List.of(), TokenUsage.NONE)));
+        Scribe explodingScribe = (state, findings, reason) -> { throw new AssertionError("scribe should not be called"); };
+
+        var state = new RunState("g16", "t", workspace);
+        var gate = new ApprovalGate(Duration.ofSeconds(10));
+        var orchestrator = orchestrator(coder, reviewer, (task, index) -> List.of(), explodingScribe,
+                new FakeSkillStore(), new FakeMemoryStore());
+
+        var outcome = runApprovingAll(orchestrator, state, gate);
+
+        assertThat(outcome.approved()).isTrue();
+    }
+
+    @Test
+    void reviewerBounceTwiceTriggersSkillExtractionOnApproval() throws Exception {
+        var coder = writingCoder("attempt");
+        var bounce = AgentResult.needsWork("reviewer", "nope",
+                List.of(new Finding(Finding.Origin.REVIEWER, Finding.Severity.HIGH, "A.java", 1, "still wrong")), TokenUsage.NONE);
+        var ok = AgentResult.ok("reviewer", "looks good now", List.of(), TokenUsage.NONE);
+        var reviewer = new ScriptedAgent("reviewer", List.of(bounce, ok));
+        Scribe scribe = (state, findings, reason) ->
+                new ScribeDraft(new SkillDraft("bounce-lesson", "d", List.of("x"), "body"), "tests use JUnit 5");
+        var skillStore = new FakeSkillStore();
+        var memoryStore = new FakeMemoryStore();
+
+        var state = new RunState("g17", "t", workspace);
+        var gate = new ApprovalGate(Duration.ofSeconds(10));
+        var orchestrator = orchestrator(coder, reviewer, (task, index) -> List.of(), scribe, skillStore, memoryStore);
+
+        var outcome = runApprovingAll(orchestrator, state, gate);
+
+        assertThat(outcome.approved()).isTrue();
+        assertThat(state.reviewIterations()).isEqualTo(2);
+        assertThat(skillStore.written).extracting(SkillDraft::name).containsExactly("bounce-lesson");
+        assertThat(memoryStore.appended).containsExactly("tests use JUnit 5");
+    }
+
+    // Regression for this plan's design note #5: decrementReviewIteration
+    // (Phase 4) rolls reviewIterations back on every human correction so it
+    // doesn't consume the reviewer's separate cap -- which means a purely
+    // human-corrected run can finish with reviewIterations stuck at 1,
+    // never reaching a literal ">= 2". The trigger must also check
+    // humanIterations, or a human's own correction would never be learned.
+    @Test
+    void humanCorrectionAloneTriggersSkillExtractionEvenThoughReviewIterationsStaysAtOne() throws Exception {
+        var coder = writingCoder("attempt");
+        var reviewer = new ScriptedAgent("reviewer",
+                List.of(AgentResult.ok("reviewer", "looks good", List.of(), TokenUsage.NONE)));
+        Scribe scribe = (state, findings, reason) ->
+                new ScribeDraft(new SkillDraft("human-taught", "d", List.of(), "body"), null);
+        var skillStore = new FakeSkillStore();
+
+        var state = new RunState("g18", "t", workspace);
+        var gate = new ApprovalGate(Duration.ofSeconds(10));
+        var orchestrator = orchestrator(coder, reviewer, (task, index) -> List.of(), scribe, skillStore, new FakeMemoryStore());
+
+        Future<Orchestrator.RunOutcome> f = pool.submit(() -> orchestrator.run(state, gate));
+        while (gate.pending() != Gate.PRE_FLIGHT) Thread.sleep(5);
+        gate.decide(ApprovalDecision.approve());
+        while (gate.pending() != Gate.BEFORE_BUILD) Thread.sleep(5);
+        gate.decide(ApprovalDecision.rejectWith("use a DTO"));
+
+        approveGatesUntilDone(gate, f);
+        f.get(20, TimeUnit.SECONDS);
+
+        assertThat(state.reviewIterations())
+                .as("the rollback that protects the reviewer's cap must not also hide a human correction from the Scribe")
+                .isEqualTo(1);
+        assertThat(state.humanIterations()).isEqualTo(1);
+        assertThat(skillStore.written).extracting(SkillDraft::name).containsExactly("human-taught");
+    }
+
+    @Test
+    void gate3RejectWithReasonRerunsOnlyTheScribeNotTheCoder() throws Exception {
+        var coder = writingCoder("attempt");
+        var bounce = AgentResult.needsWork("reviewer", "nope",
+                List.of(new Finding(Finding.Origin.REVIEWER, Finding.Severity.HIGH, "A.java", 1, "still wrong")), TokenUsage.NONE);
+        var ok = AgentResult.ok("reviewer", "looks good now", List.of(), TokenUsage.NONE);
+        var reviewer = new ScriptedAgent("reviewer", List.of(bounce, ok));
+
+        var scribeCalls = new AtomicInteger(0);
+        Scribe scribe = (state, findings, reason) -> {
+            int n = scribeCalls.incrementAndGet();
+            String name = n == 1 ? "first-draft" : "revised-draft";
+            return new ScribeDraft(new SkillDraft(name, "d", List.of(), "body"), null);
+        };
+        var skillStore = new FakeSkillStore();
+
+        var state = new RunState("g19", "t", workspace);
+        var gate = new ApprovalGate(Duration.ofSeconds(10));
+        var orchestrator = orchestrator(coder, reviewer, (task, index) -> List.of(), scribe, skillStore, new FakeMemoryStore());
+
+        Future<Orchestrator.RunOutcome> f = pool.submit(() -> orchestrator.run(state, gate));
+        approveUntil(gate, f, Gate.BEFORE_COMMIT);
+        gate.decide(ApprovalDecision.rejectWith("wrong lesson"));
+        while (gate.pending() != Gate.BEFORE_COMMIT) Thread.sleep(5);
+        gate.decide(ApprovalDecision.approve());
+
+        var outcome = f.get(20, TimeUnit.SECONDS);
+
+        assertThat(outcome.approved()).isTrue();
+        assertThat(coder.calls).as("Gate 3's retry must re-run only the Scribe, not the coder").isEqualTo(2);
+        assertThat(scribeCalls.get()).isEqualTo(2);
+        assertThat(skillStore.written).extracting(SkillDraft::name).containsExactly("revised-draft");
+    }
+
+    @Test
+    void gate3RejectWithoutReasonCommitsCodeButDiscardsTheDraft() throws Exception {
+        var coder = writingCoder("attempt");
+        var bounce = AgentResult.needsWork("reviewer", "nope",
+                List.of(new Finding(Finding.Origin.REVIEWER, Finding.Severity.HIGH, "A.java", 1, "still wrong")), TokenUsage.NONE);
+        var ok = AgentResult.ok("reviewer", "looks good now", List.of(), TokenUsage.NONE);
+        var reviewer = new ScriptedAgent("reviewer", List.of(bounce, ok));
+        Scribe scribe = (state, findings, reason) ->
+                new ScribeDraft(new SkillDraft("a-lesson", "d", List.of(), "body"), null);
+        var skillStore = new FakeSkillStore();
+
+        var state = new RunState("g20", "t", workspace);
+        var gate = new ApprovalGate(Duration.ofSeconds(10));
+        var orchestrator = orchestrator(coder, reviewer, (task, index) -> List.of(), scribe, skillStore, new FakeMemoryStore());
+
+        Future<Orchestrator.RunOutcome> f = pool.submit(() -> orchestrator.run(state, gate));
+        approveUntil(gate, f, Gate.BEFORE_COMMIT);
+        gate.decide(ApprovalDecision.reject()); // no reason
+
+        var outcome = f.get(20, TimeUnit.SECONDS);
+
+        assertThat(outcome.approved())
+                .as("Gate 3 alone commits validated code even on a bare rejection -- spec §5.2's Gate-3 row")
+                .isTrue();
+        assertThat(skillStore.written).isEmpty();
+    }
 }
