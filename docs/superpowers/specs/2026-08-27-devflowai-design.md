@@ -210,6 +210,22 @@ it (unlike `BuildTools`, which already has a configurable timeout for the
 build it runs) — `ClonedWorkspace.prepare()` needs the same kind of timeout,
 for the same reason: a hung remote must not hang a run forever.
 
+**The allowlist holds through the full transport lifetime, not just at the
+door.** Verified by disassembling the resolved JGit 7.1.0 jar: `TransportHttp`
+sets `setInstanceFollowRedirects(false)` and handles redirects itself, gated
+by `isValidRedirect`, whose logic refuses a redirect whose new scheme isn't
+either the same protocol or literally `https` — so a base `https://` URL
+whose server issues a `Location: file://…` or `ext::…` redirect is refused,
+not silently followed out of the allowed scheme.
+
+**What the allowlist deliberately does not close:** a well-formed `https://`
+URL pointing at a private or link-local address (`https://10.0.0.1/x.git`,
+`https://169.254.169.254/…`) passes the check — this is an accepted risk
+under §11's single-user, non-multi-tenant framing, not an oversight. A
+future phase serving untrusted operators (rather than the single local user
+this tool is scoped for) would need to add destination validation on top of
+the scheme check.
+
 ---
 
 ## 5. Run lifecycle

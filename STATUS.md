@@ -1,7 +1,7 @@
 # devflowai — Status
 
 **Last updated:** 2026-09-05
-**Branch:** `main` — 60 commits, all merged, `./gradlew clean test`: 137 tests, 0 failures
+**Branch:** `main` — 71 commits, all merged, `./gradlew clean test`: 154 tests, 0 failures
 **Spec:** `docs/superpowers/specs/2026-08-27-devflowai-design.md`
 
 ---
@@ -23,8 +23,9 @@ unverified](#whats-actually-unverified).
 | [Phases 0–3](docs/superpowers/plans/2026-08-27-devflowai-phases-0-3.md) | 15 | 1 (4 commits) | ✅ Merged |
 | [Phase 4](docs/superpowers/plans/2026-08-29-devflowai-phase-4.md) | 10 | 1 (3 commits) | ✅ Merged |
 | [Phase 5](docs/superpowers/plans/2026-09-05-devflowai-phase-5.md) | 10 | 1 (1 commit) | ✅ Merged |
+| [Phase 6](docs/superpowers/plans/2026-09-05-devflowai-phase-6.md) | 6 | 2 (1 commit each) | ✅ Merged |
 
-All three plans were executed subagent-driven: a fresh implementer per task, an
+All four plans were executed subagent-driven: a fresh implementer per task, an
 independent reviewer per task (never the implementer grading its own work), a
 fix loop for anything the reviewer flagged, and one broad whole-branch review
 at the end of each plan. The ledgers are gone (deleted per process once each
@@ -179,15 +180,91 @@ for exactly this case.
 router was built (the spec's "Router" box was never implemented in Phases
 0–4 either — only coder→reviewer exists, so there is nothing yet for a router
 to route between); the `SkillPicker` reuses the router's Haiku bean scoped
-narrowly to skill selection. `repoSlug` is hardcoded to `"fixture"` — Phase 6
-will need a real derivation from a repo URL. "Merges into an existing skill
-by name" (spec §6.3) is implemented as whole-file overwrite by slug, not
-content-level merging.
+narrowly to skill selection. `repoSlug` was hardcoded to `"fixture"` in this
+phase — Phase 6 gave it a real derivation from a repo URL. "Merges into an
+existing skill by name" (spec §6.3) is implemented as whole-file overwrite by
+slug, not content-level merging.
 
 **Also shipped alongside this phase, outside its plan:** the operator page can
 now attach a `.md`/`.txt` file instead of typing the task by hand — read
 client-side, no backend change, so the documented three-endpoint contract is
 untouched.
+
+---
+
+## Phase 6 — `ClonedWorkspace`
+
+**Goal:** point devflowai at a real public git repo URL instead of only the
+bundled fixture — "an interviewer can hand over a URL" (spec §12).
+
+| Task | What it built |
+|---|---|
+| 1 | `Slug` utility extracted from Phase 5's skill-naming code, reused for repo-URL-to-repoSlug derivation |
+| 2 | `AbstractGitWorkspace` (shared base for `FixtureWorkspace`/`ClonedWorkspace`); `ClonedWorkspace` itself — shallow clone, `https://`-only scheme allowlist |
+| 3 | `repoSlug` becomes genuinely per-run (carried on `RunState`) instead of a static config value |
+| 4 | `RunRegistry` routes `"fixture"` vs. a real URL; a rejected URL becomes a clean HTTP 400 instead of a raw 500 |
+| 5 | Operator page gets a URL field that overrides the repo dropdown |
+| 6 | Full-stack live test — a real clone flows through HTTP end to end, without ever letting a real (recursively nested) build run |
+
+**A security finding that changed the design, not just the implementation:**
+before writing any code, a live spike against the actual resolved JGit 7.1.0
+jar found that `Git.cloneRepository().setURI(...)` doesn't just fetch over
+HTTPS — it dispatches on the URI's scheme to whichever transport JGit has
+registered. Confirmed live: an `ext::<command>` URI spawns `<command>` as a
+real subprocess (the resulting `TransportException`'s shape — a live process
+whose pipe closed, not "unsupported protocol" — proves the subprocess
+actually ran), and both `file://<path>` and a bare schemeless path silently
+clone from the *server's own filesystem* with no exception at all. This is
+recorded in the spec itself (§4.1, added during brainstorming, before any
+task was written) rather than discovered mid-implementation: the operator-
+supplied `repo` string is validated against a strict `https://`-prefix
+allowlist in `ClonedWorkspace`'s constructor, before any network call.
+
+**A second, independent confirmation from the final whole-branch review:**
+that reviewer went further and disassembled JGit's `TransportHttp` to check
+whether the allowlist could be bypassed via an HTTP redirect from a
+legitimate `https://` URL to a dangerous scheme — it can't; JGit's own
+`isValidRedirect` refuses to follow a redirect whose scheme isn't the same
+protocol or literally `https`. The allowlist holds through the full
+transport lifetime, not just at the door.
+
+**Real bugs found and fixed:**
+
+- **Caught only by the final whole-branch review, not any per-task review:**
+  `repoSlug` was derived by slugging the raw repo URL directly, so
+  `"https://github.com/o/r.git"` and `"https://github.com/o/r"` — both
+  plausible pastes for the same repo (GitHub's own "Code → HTTPS" button
+  appends `.git`; the browser address bar doesn't) — produced two different
+  slugs, silently splitting the learning loop's identity for that repo
+  depending purely on which URL spelling was pasted. Fixed by normalizing
+  the URL (stripping the scheme, a trailing `/`, and a trailing `.git`)
+  before slugging. Caught before any real skill data existed under the old
+  scheme, so nothing needed migrating.
+- The same review found no test proved a non-`"fixture"` `repoSlug` actually
+  reached `SkillStore`/`MemoryStore` through `Orchestrator` — a real
+  coverage gap on the phase's central claim, carried forward from Task 3
+  through Task 4 without closing. Closed with a dedicated test.
+- Two free, low-risk fixes taken opportunistically: `RunController` now
+  trims the `repo` string before validating it (a stray leading space
+  previously produced a confusing, apparently self-contradictory rejection
+  message), and `Slug.of` now uses `Locale.ROOT` rather than the JVM's
+  default locale (which could otherwise mangle a slug differently on a
+  different deployment's locale settings).
+
+**Known, deliberately unresolved after this phase:** whether a real cloned
+repo's own `.gitignore` correctly protects (or, in the other direction,
+doesn't accidentally exclude) `.devflowai/` — the live test clones this
+project's own repo but rejects before any commit happens, so it never
+actually exercises this. See the `git add .` row below.
+
+**Design calls made explicitly:** duplicated temp-dir creation between
+`FixtureWorkspace`/`ClonedWorkspace.prepare()` was left as-is rather than
+factored into `AbstractGitWorkspace` (cosmetic, not correctness-affecting).
+The scheme check is deliberately case-sensitive (`HTTPS://` is rejected) —
+fails safe, matches the client-side check, no divergence to trip over.
+Destination validation (a well-formed `https://` URL pointing at a private
+or link-local address) is explicitly out of scope under spec §11's
+single-user framing, recorded as such in §4.1 rather than left implicit.
 
 ---
 
@@ -225,25 +302,25 @@ judged non-blocking or explicitly deferred to a later phase.
 | Gap | Why it's not fixed yet |
 |---|---|
 | The bundled fixture has no `gradlew`/`mvnw` | Every real run's Gate 2 will show "Build failed: no wrapper found." Deliberate in Phase 0–3 (it's what lets `BuildToolsTest` test the missing-wrapper path) — but Phase 4's web page is the first thing to make this visible to an operator. |
-| `GitTools.commit()`'s `git add .` is unconditional | **Re-checked 2026-09-05, finding corrected:** empirically verified (`GitToolsTest.gitignoredBuildOutputNeverReachesStatusChangedFilesOrCommit`) that JGit's `add`/`status` already honor a repo's own `.gitignore` — a gitignored `build/` directory never reaches `changedFiles()`, `status()`, or a commit. The risk this row originally described (any real wrapper corrupting the Gate 3 file list) does not hold for a repo with normal `.gitignore` hygiene, which is nearly all of them. Residual, narrower risk: a target repo whose `.gitignore` is missing or incomplete for its own build tool. Separately, Phase 5 now *depends on* this same unconditional `git add .` to stage `.devflowai/skills/*.md` and `.devflowai/memory.md` — so if a real repo's own `.gitignore` happens to exclude `.devflowai/` (e.g. an overly broad dot-directory pattern), the learning loop's commit would silently no-op instead. Neither direction is fixed yet; no longer a hard blocker for Phase 6, but worth a real test against an actual cloned repo before relying on either assumption. |
+| `GitTools.commit()`'s `git add .` is unconditional | **Re-checked 2026-09-05:** empirically verified (`GitToolsTest.gitignoredBuildOutputNeverReachesStatusChangedFilesOrCommit`) that JGit's `add`/`status` already honor a repo's own `.gitignore` — a gitignored `build/` directory never reaches `changedFiles()`, `status()`, or a commit. The risk this row originally described (any real wrapper corrupting the Gate 3 file list) does not hold for a repo with normal `.gitignore` hygiene, which is nearly all of them. Residual, narrower risk: a target repo whose `.gitignore` is missing or incomplete for its own build tool. Separately, Phase 5 depends on this same unconditional `git add .` to stage `.devflowai/skills/*.md` and `.devflowai/memory.md` — so if a real repo's own `.gitignore` happens to exclude `.devflowai/`, the learning loop's commit would silently no-op instead. **Phase 6 shipped `ClonedWorkspace` without resolving either direction** — its live test clones a real repo but rejects before any commit happens, so neither assumption has been exercised against real repo content yet. Worth a real end-to-end test (clone a repo, actually reach Gate 3, commit) before relying on either. |
 | `index.html`'s `showGate()` ignores whether the build passed | Minor — the preceding "Build passed/failed" step line is already visible just above the gate box. |
 | Server binds `0.0.0.0` with no authentication | Acceptable for the design's stated scope (single-user, local, non-hardened tool per spec §11) — do not expose this port to an untrusted network. |
 | `devflowai.fixture.path` points into `src/test/resources`, not packaged into a boot jar | Fine for `./gradlew bootRun` from source (the documented way to run it); would break if ever containerized. Relevant if/when a Docker image gets built. |
 
 ---
 
-## What's left — Phases 6–7
+## What's left — Phase 7
 
 Sketched in the original spec, not planned in task-by-task detail yet:
 
-- **Phase 6 — `ClonedWorkspace`.** Point devflowai at a real git URL instead
-  of only the bundled fixture. No longer hard-blocked on the `git add .` fix
-  (see that row's correction above), but that row's residual risk in both
-  directions is worth resolving against a real cloned repo as part of this
-  phase, not assumed away. Also needs a real `repoSlug` derivation from the
-  repo URL — Phase 5 hardcoded it to `"fixture"`.
 - **Phase 7 — the rest of the crew.** Planner, test-writer, doc-writer agents,
   plus a routing evaluation harness.
+- **A real end-to-end run against a cloned repo, reaching an actual commit**
+  — Phase 6's live test deliberately stops before Gate 2's build to avoid a
+  slow, recursively-nested build against devflowai's own test suite. Worth a
+  pass against some other small, real, buildable public repo to close the
+  `git add .` / `.devflowai/` residual risk noted above, and to prove the
+  skill/memory files an actual clone would produce really do get committed.
 
 Also on the table, discussed but not started: a Dockerfile and a deployed
 instance, so the project has a link an interviewer can open rather than a

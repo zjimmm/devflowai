@@ -34,6 +34,10 @@ Endpoints (the page uses these three and nothing else):
     GET  /api/runs/{id}/stream      Server-Sent Events
     POST /api/runs/{id}/approve     {"approved": true|false, "reason": "..."|null}
 
+`repo` is `"fixture"` for the bundled fixture, or (Phase 6) an `https://` git
+URL to clone instead — see spec §4.1 for why that string is validated with a
+strict scheme allowlist before any git operation, not treated as a trusted URL.
+
 ## Non-negotiables
 
 - **Pin every model explicitly — never rely on the starter's default.** Static
