@@ -45,7 +45,7 @@ class RunRegistryTest {
         var events = new RunEventPublisher();
         var orchestrator = new Orchestrator(new StubAgent("coder"), new StubAgent("reviewer"),
                 (task, index) -> List.of(), (state, findings, reason) -> ScribeDraft.EMPTY,
-                new NoOpSkillStore(), new NoOpMemoryStore(), "fixture",
+                new NoOpSkillStore(), new NoOpMemoryStore(),
                 events, 3, 5, Duration.ofMinutes(1));
         registry = new RunRegistry(orchestrator, events, Executors.newCachedThreadPool(),
                 java.nio.file.Path.of("src/test/resources/fixture"), Duration.ofSeconds(2));

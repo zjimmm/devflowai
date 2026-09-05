@@ -73,11 +73,10 @@ public class OrchestrationConfig {
     @Bean
     Orchestrator orchestrator(Agent coderAgent, Agent reviewerAgent, SkillPicker skillPicker, Scribe scribe,
                               SkillStore skillStore, MemoryStore memoryStore, RunEventPublisher events,
-                              @Value("${devflowai.skills.repo-slug:fixture}") String repoSlug,
                               @Value("${devflowai.review.max-iterations:3}") int maxReviewIterations,
                               @Value("${devflowai.review.max-human-iterations:5}") int maxHumanIterations,
                               @Value("${devflowai.build.timeout-minutes:5}") long buildTimeoutMinutes) {
-        return new Orchestrator(coderAgent, reviewerAgent, skillPicker, scribe, skillStore, memoryStore, repoSlug,
+        return new Orchestrator(coderAgent, reviewerAgent, skillPicker, scribe, skillStore, memoryStore,
                 events, maxReviewIterations, maxHumanIterations, Duration.ofMinutes(buildTimeoutMinutes));
     }
 

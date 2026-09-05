@@ -96,7 +96,7 @@ class OrchestratorTest {
 
     private Orchestrator orchestrator(Agent coder, Agent reviewer, SkillPicker picker, Scribe scribe,
                                       SkillStore skillStore, MemoryStore memoryStore) {
-        return new Orchestrator(coder, reviewer, picker, scribe, skillStore, memoryStore, "fixture",
+        return new Orchestrator(coder, reviewer, picker, scribe, skillStore, memoryStore,
                 events, 3, 5, Duration.ofMinutes(1));
     }
 

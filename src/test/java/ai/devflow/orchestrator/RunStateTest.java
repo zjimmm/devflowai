@@ -132,4 +132,16 @@ class RunStateTest {
         state.setPendingScribeDraft(draft);
         assertThat(state.pendingScribeDraft()).isEqualTo(draft);
     }
+
+    @Test
+    void repoSlugDefaultsToFixtureViaTheThreeArgConstructor() {
+        var state = new RunState("r", "t", workspace);
+        assertThat(state.repoSlug()).isEqualTo("fixture");
+    }
+
+    @Test
+    void repoSlugIsExplicitViaTheFourArgConstructor() {
+        var state = new RunState("r", "t", workspace, "github-com-owner-repo");
+        assertThat(state.repoSlug()).isEqualTo("github-com-owner-repo");
+    }
 }

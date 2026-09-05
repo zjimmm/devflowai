@@ -38,14 +38,13 @@ public class Orchestrator {
     private final Scribe scribe;
     private final SkillStore skillStore;
     private final MemoryStore memoryStore;
-    private final String repoSlug;
     private final RunEventPublisher events;
     private final int maxReviewIterations;
     private final int maxHumanIterations;
     private final Duration buildTimeout;
 
     public Orchestrator(Agent coder, Agent reviewer, SkillPicker skillPicker, Scribe scribe,
-                        SkillStore skillStore, MemoryStore memoryStore, String repoSlug,
+                        SkillStore skillStore, MemoryStore memoryStore,
                         RunEventPublisher events, int maxReviewIterations, int maxHumanIterations,
                         Duration buildTimeout) {
         this.coder = coder;
@@ -54,7 +53,6 @@ public class Orchestrator {
         this.scribe = scribe;
         this.skillStore = skillStore;
         this.memoryStore = memoryStore;
-        this.repoSlug = repoSlug;
         this.events = events;
         this.maxReviewIterations = maxReviewIterations;
         this.maxHumanIterations = maxHumanIterations;
@@ -227,11 +225,11 @@ public class Orchestrator {
             // ---- Persist the (possibly empty) draft, then commit -----------
             if (!draft.isEmpty()) {
                 if (draft.skill() != null) {
-                    skillStore.write(repoSlug, state.runId(), draft.skill());
+                    skillStore.write(state.repoSlug(), state.runId(), draft.skill());
                     writeIntoWorkspace(state, draft.skill());
                 }
                 if (draft.memoryFact() != null && !draft.memoryFact().isBlank()) {
-                    String updated = memoryStore.append(repoSlug, draft.memoryFact());
+                    String updated = memoryStore.append(state.repoSlug(), draft.memoryFact());
                     writeMemoryIntoWorkspace(state, updated);
                 }
             }
@@ -327,10 +325,10 @@ public class Orchestrator {
 
     /** Loads memory whole and picks ≤3 relevant skills, before any Opus 5 call (spec §5 steps 4-5). */
     private void loadKnowledge(RunState state) {
-        String memory = memoryStore.read(repoSlug);
+        String memory = memoryStore.read(state.repoSlug());
         if (!memory.isBlank()) state.setMemory(memory);
 
-        List<SkillIndexEntry> index = skillStore.index(repoSlug);
+        List<SkillIndexEntry> index = skillStore.index(state.repoSlug());
         if (index.isEmpty()) return; // never spend a call picking from nothing
 
         List<String> validNames = index.stream().map(SkillIndexEntry::name).toList();
@@ -338,7 +336,7 @@ public class Orchestrator {
                 .filter(validNames::contains)
                 .toList();
         for (String name : names) {
-            String full = skillStore.readFull(repoSlug, name);
+            String full = skillStore.readFull(state.repoSlug(), name);
             if (!full.isBlank()) state.addLoadedSkill(full);
         }
         if (!names.isEmpty()) {

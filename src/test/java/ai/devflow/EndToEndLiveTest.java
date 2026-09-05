@@ -39,7 +39,6 @@ class EndToEndLiveTest {
                         @Override public String read(String repoSlug) { return ""; }
                         @Override public String append(String repoSlug, String fact) { return ""; }
                     },
-                    "fixture",
                     new ai.devflow.event.RunEventPublisher(),
                     3, 5, java.time.Duration.ofMinutes(5));
 
