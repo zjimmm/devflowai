@@ -1,5 +1,7 @@
 package ai.devflow.event;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -36,6 +38,17 @@ public class RunEventPublisher {
 
     private final Map<String, SseEmitter> emitters = new ConcurrentHashMap<>();
     private final Map<String, List<RunEvent>> history = new ConcurrentHashMap<>();
+    private final ApplicationEventPublisher applicationEvents;
+
+    /** Used by every existing test that constructs this directly — fires nothing. */
+    public RunEventPublisher() {
+        this(event -> {});
+    }
+
+    @Autowired
+    public RunEventPublisher(ApplicationEventPublisher applicationEvents) {
+        this.applicationEvents = applicationEvents;
+    }
 
     public SseEmitter subscribe(String runId) {
         return subscribe(runId, new SseEmitter(EMITTER_TIMEOUT_MS));
@@ -68,6 +81,7 @@ public class RunEventPublisher {
 
     public void publish(String runId, RunEvent event) {
         recordHistory(runId, event);
+        applicationEvents.publishEvent(new RunRecorded(runId, event));
         SseEmitter emitter = emitters.get(runId);
         if (emitter == null) return;
         sendQuietly(runId, emitter, event);

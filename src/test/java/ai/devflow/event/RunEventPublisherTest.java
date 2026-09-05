@@ -106,4 +106,15 @@ class RunEventPublisherTest {
     void eventWithoutDataHasAnEmptyMap() {
         assertThat(RunEvent.of("step", "hi").data()).isEmpty();
     }
+
+    @Test
+    void publishFiresARunRecordedApplicationEvent() {
+        var captured = new java.util.ArrayList<Object>();
+        var publisher = new RunEventPublisher(captured::add);
+
+        var event = RunEvent.of("step", "hello");
+        publisher.publish("run-x", event);
+
+        assertThat(captured).containsExactly(new RunRecorded("run-x", event));
+    }
 }

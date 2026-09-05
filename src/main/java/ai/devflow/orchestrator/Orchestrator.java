@@ -79,7 +79,9 @@ public class Orchestrator {
 
     private RunOutcome execute(RunState state, ApprovalGate gate) {
         emit(state, "step", "Workspace ready — branch " + state.workspace().branchName(),
-                Map.of("branch", state.workspace().branchName()));
+                Map.of("branch", state.workspace().branchName(),
+                       "task", state.task(),
+                       "repoSlug", state.repoSlug()));
 
         loadKnowledge(state);
 
@@ -309,18 +311,24 @@ public class Orchestrator {
 
     private RunOutcome aborted(RunState state, String reason) {
         state.setPhase(RunPhase.FAILED);
-        emit(state, "aborted", reason, Map.of());
+        emit(state, "aborted", reason, tokenData(state));
         return new RunOutcome(false, reason, state);
     }
 
     private RunOutcome failed(RunState state, String reason) {
         state.setPhase(RunPhase.FAILED);
-        emit(state, "error", reason, Map.of());
+        emit(state, "error", reason, tokenData(state));
         return new RunOutcome(false, reason, state);
     }
 
+    private Map<String, Object> tokenData(RunState state) {
+        return Map.of("inputTokens", state.totalTokens().input(), "outputTokens", state.totalTokens().output());
+    }
+
     private void emit(RunState state, String type, String message, Map<String, Object> data) {
-        events.publish(state.runId(), RunEvent.of(type, message, data));
+        Map<String, Object> withPhase = new HashMap<>(data);
+        withPhase.put("phase", state.phase().name());
+        events.publish(state.runId(), RunEvent.of(type, message, withPhase));
     }
 
     /** Loads memory whole and picks ≤3 relevant skills, before any Opus 5 call (spec §5 steps 4-5). */

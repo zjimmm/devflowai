@@ -75,7 +75,8 @@ public class RunRegistry {
             } catch (Exception e) {
                 state.setPhase(RunPhase.FAILED);
                 events.publish(runId, RunEvent.of("error",
-                        "Could not prepare the workspace: " + e.getMessage(), Map.of()));
+                        "Could not prepare the workspace: " + e.getMessage(),
+                        Map.of("task", task, "repoSlug", repoSlug)));
                 // workspace.prepare() can throw partway through (e.g. after
                 // copying files but before git init completes), leaking a temp
                 // directory on disk. Orchestrator.run's own cleanup is never
