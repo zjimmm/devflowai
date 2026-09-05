@@ -34,7 +34,12 @@ public class RunController {
             return ResponseEntity.badRequest().body(Map.of("error", "task must not be blank"));
         }
         String repo = (request.repo() == null || request.repo().isBlank()) ? "fixture" : request.repo();
-        RunHandle handle = registry.start(request.task().trim(), repo);
+        RunHandle handle;
+        try {
+            handle = registry.start(request.task().trim(), repo);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
         return ResponseEntity.ok(Map.of("runId", handle.runId()));
     }
 

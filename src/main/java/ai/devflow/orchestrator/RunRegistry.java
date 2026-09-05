@@ -2,6 +2,8 @@ package ai.devflow.orchestrator;
 
 import ai.devflow.event.RunEvent;
 import ai.devflow.event.RunEventPublisher;
+import ai.devflow.util.Slug;
+import ai.devflow.workspace.ClonedWorkspace;
 import ai.devflow.workspace.FixtureWorkspace;
 import ai.devflow.workspace.Workspace;
 
@@ -25,28 +27,45 @@ public class RunRegistry {
     private final ExecutorService executor;
     private final Path fixtureSource;
     private final Duration gateTimeout;
+    private final Duration cloneTimeout;
 
     private final Map<String, RunHandle> runs = new ConcurrentHashMap<>();
 
     public RunRegistry(Orchestrator orchestrator, RunEventPublisher events,
-                       ExecutorService executor, Path fixtureSource, Duration gateTimeout) {
+                       ExecutorService executor, Path fixtureSource, Duration gateTimeout,
+                       Duration cloneTimeout) {
         this.orchestrator = orchestrator;
         this.events = events;
         this.executor = executor;
         this.fixtureSource = fixtureSource;
         this.gateTimeout = gateTimeout;
+        this.cloneTimeout = cloneTimeout;
     }
 
     /**
      * Prepares a workspace and starts the orchestrator on the executor.
      *
-     * @param repo currently only "fixture" — Phase 6 adds git-URL cloning
-     *             behind the same {@link Workspace} interface.
+     * @param repo {@code "fixture"} for the bundled fixture, or an
+     *             {@code https://} git URL to clone (spec §4.1). A rejected
+     *             URL throws {@link IllegalArgumentException} synchronously
+     *             from this method -- {@link ClonedWorkspace}'s constructor
+     *             validates before any network call, so the caller (
+     *             {@code RunController}) gets an immediate, clean error
+     *             rather than an async failure event after the run has
+     *             already been reported started.
      */
     public RunHandle start(String task, String repo) {
         String runId = UUID.randomUUID().toString().substring(0, 8);
-        Workspace workspace = new FixtureWorkspace(fixtureSource, runId);
-        RunState state = new RunState(runId, task, workspace);
+        Workspace workspace;
+        String repoSlug;
+        if (repo.equals("fixture")) {
+            workspace = new FixtureWorkspace(fixtureSource, runId);
+            repoSlug = "fixture";
+        } else {
+            workspace = new ClonedWorkspace(repo, runId, cloneTimeout);
+            repoSlug = Slug.of(repo);
+        }
+        RunState state = new RunState(runId, task, workspace, repoSlug);
         ApprovalGate gate = new ApprovalGate(gateTimeout);
 
         var future = executor.submit(() -> {

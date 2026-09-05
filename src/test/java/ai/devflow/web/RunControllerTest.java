@@ -63,6 +63,17 @@ class RunControllerTest {
     }
 
     @Test
+    void startingARunRejectsARepoStringThatIsNotAnHttpsUrl() throws Exception {
+        when(registry.start(any(), any()))
+                .thenThrow(new IllegalArgumentException("Repo must be an https:// URL, got: ext::sh -c \"true\""));
+
+        mvc.perform(post("/api/runs")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(new StartRunRequest("do a thing", "ext::sh -c \"true\""))))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void streamingAnUnknownRunIs404() throws Exception {
         when(registry.find("nope")).thenReturn(null);
         mvc.perform(get("/api/runs/nope/stream")).andExpect(status().isNotFound());

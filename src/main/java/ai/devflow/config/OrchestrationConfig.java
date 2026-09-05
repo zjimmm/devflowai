@@ -83,8 +83,10 @@ public class OrchestrationConfig {
     @Bean
     RunRegistry runRegistry(Orchestrator orchestrator, RunEventPublisher events, ExecutorService runExecutor,
                             @Value("${devflowai.fixture.path:src/test/resources/fixture}") String fixturePath,
-                            @Value("${devflowai.gate.timeout-minutes:10}") long gateTimeoutMinutes) {
+                            @Value("${devflowai.gate.timeout-minutes:10}") long gateTimeoutMinutes,
+                            @Value("${devflowai.clone.timeout-minutes:2}") long cloneTimeoutMinutes) {
         return new RunRegistry(orchestrator, events, runExecutor,
-                Path.of(fixturePath), Duration.ofMinutes(gateTimeoutMinutes));
+                Path.of(fixturePath), Duration.ofMinutes(gateTimeoutMinutes),
+                Duration.ofMinutes(cloneTimeoutMinutes));
     }
 }

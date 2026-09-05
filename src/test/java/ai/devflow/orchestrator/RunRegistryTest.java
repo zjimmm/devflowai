@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.concurrent.Executors;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class RunRegistryTest {
 
@@ -48,7 +49,8 @@ class RunRegistryTest {
                 new NoOpSkillStore(), new NoOpMemoryStore(),
                 events, 3, 5, Duration.ofMinutes(1));
         registry = new RunRegistry(orchestrator, events, Executors.newCachedThreadPool(),
-                java.nio.file.Path.of("src/test/resources/fixture"), Duration.ofSeconds(2));
+                java.nio.file.Path.of("src/test/resources/fixture"), Duration.ofSeconds(2),
+                Duration.ofSeconds(2));
     }
 
     @Test
@@ -73,5 +75,11 @@ class RunRegistryTest {
         assertThat(handle.state().task()).isEqualTo("a task");
         assertThat(handle.state().runId()).isEqualTo(handle.runId());
         assertThat(handle.gate()).isNotNull();
+    }
+
+    @Test
+    void aNonHttpsRepoIsRejectedSynchronouslyWithoutStartingAnyWork() {
+        assertThatThrownBy(() -> registry.start("task", "ext::sh -c \"true\""))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 }
