@@ -33,7 +33,8 @@ public class RunController {
         if (request.task() == null || request.task().isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "task must not be blank"));
         }
-        String repo = (request.repo() == null || request.repo().isBlank()) ? "fixture" : request.repo();
+        String rawRepo = request.repo() == null ? "" : request.repo().trim();
+        String repo = rawRepo.isBlank() ? "fixture" : rawRepo;
         RunHandle handle;
         try {
             handle = registry.start(request.task().trim(), repo);

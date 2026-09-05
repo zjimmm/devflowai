@@ -69,14 +69,20 @@ class OrchestratorTest {
         final Map<String, String> full = new HashMap<>();
         final List<SkillDraft> written = new ArrayList<>();
         final List<String> readFullCalls = new ArrayList<>();
+        final List<String> repoSlugsSeen = new ArrayList<>();
         FakeSkillStore() { this(List.of()); }
         FakeSkillStore(List<SkillIndexEntry> entries) { this.entries = entries; }
-        @Override public List<SkillIndexEntry> index(String repoSlug) { return entries; }
+        @Override public List<SkillIndexEntry> index(String repoSlug) {
+            repoSlugsSeen.add(repoSlug);
+            return entries;
+        }
         @Override public String readFull(String repoSlug, String name) {
+            repoSlugsSeen.add(repoSlug);
             readFullCalls.add(name);
             return full.getOrDefault(name, "");
         }
         @Override public String write(String repoSlug, String runId, SkillDraft draft) {
+            repoSlugsSeen.add(repoSlug);
             written.add(draft);
             return SkillFileFormat.render(draft, runId);
         }
@@ -85,8 +91,16 @@ class OrchestratorTest {
     static class FakeMemoryStore implements MemoryStore {
         String content = "";
         final List<String> appended = new ArrayList<>();
-        @Override public String read(String repoSlug) { return content; }
-        @Override public String append(String repoSlug, String fact) { appended.add(fact); return content; }
+        final List<String> repoSlugsSeen = new ArrayList<>();
+        @Override public String read(String repoSlug) {
+            repoSlugsSeen.add(repoSlug);
+            return content;
+        }
+        @Override public String append(String repoSlug, String fact) {
+            repoSlugsSeen.add(repoSlug);
+            appended.add(fact);
+            return content;
+        }
     }
 
     private Orchestrator orchestrator(Agent coder, Agent reviewer) {
@@ -383,6 +397,29 @@ class OrchestratorTest {
         assertThat(state.reviewIterations()).isEqualTo(2);
         assertThat(skillStore.written).extracting(SkillDraft::name).containsExactly("bounce-lesson");
         assertThat(memoryStore.appended).containsExactly("tests use JUnit 5");
+    }
+
+    @Test
+    void repoSlugFromRunStateThreadsThroughToTheStores() throws Exception {
+        var coder = writingCoder("attempt");
+        var bounce = AgentResult.needsWork("reviewer", "nope",
+                List.of(new Finding(Finding.Origin.REVIEWER, Finding.Severity.HIGH, "A.java", 1, "still wrong")), TokenUsage.NONE);
+        var ok = AgentResult.ok("reviewer", "looks good now", List.of(), TokenUsage.NONE);
+        var reviewer = new ScriptedAgent("reviewer", List.of(bounce, ok));
+        Scribe scribe = (state, findings, reason) ->
+                new ScribeDraft(new SkillDraft("s", "d", List.of(), "body"), "a fact");
+        var skillStore = new FakeSkillStore();
+        var memoryStore = new FakeMemoryStore();
+
+        var state = new RunState("g21", "t", workspace, "repo-x");
+        var gate = new ApprovalGate(Duration.ofSeconds(10));
+        var orchestrator = orchestrator(coder, reviewer, (task, index) -> List.of(), scribe, skillStore, memoryStore);
+
+        var outcome = runApprovingAll(orchestrator, state, gate);
+
+        assertThat(outcome.approved()).isTrue();
+        assertThat(skillStore.repoSlugsSeen).containsOnly("repo-x");
+        assertThat(memoryStore.repoSlugsSeen).containsOnly("repo-x");
     }
 
     // Regression for this plan's design note #5: decrementReviewIteration

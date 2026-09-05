@@ -1,5 +1,7 @@
 package ai.devflow.util;
 
+import java.util.Locale;
+
 /**
  * Filename/identifier-safe slugging: lowercase, collapse any run of
  * non-alphanumeric characters into a single dash, trim leading/trailing
@@ -14,7 +16,7 @@ public final class Slug {
     private Slug() {}
 
     public static String of(String raw) {
-        String s = raw.toLowerCase().trim().replaceAll("[^a-z0-9]+", "-");
+        String s = raw.toLowerCase(Locale.ROOT).trim().replaceAll("[^a-z0-9]+", "-");
         return s.replaceAll("(^-+|-+$)", "");
     }
 }

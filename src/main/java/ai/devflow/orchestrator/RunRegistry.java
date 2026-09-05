@@ -58,12 +58,12 @@ public class RunRegistry {
         String runId = UUID.randomUUID().toString().substring(0, 8);
         Workspace workspace;
         String repoSlug;
-        if (repo.equals("fixture")) {
+        if ("fixture".equals(repo)) {
             workspace = new FixtureWorkspace(fixtureSource, runId);
             repoSlug = "fixture";
         } else {
             workspace = new ClonedWorkspace(repo, runId, cloneTimeout);
-            repoSlug = Slug.of(repo);
+            repoSlug = Slug.of(normalizeRepoUrl(repo));
         }
         RunState state = new RunState(runId, task, workspace, repoSlug);
         ApprovalGate gate = new ApprovalGate(gateTimeout);
@@ -99,5 +99,16 @@ public class RunRegistry {
 
     public RunHandle find(String runId) {
         return runs.get(runId);
+    }
+
+    /** Package-private for RunRegistryTest. Strips the parts of an https:// repo
+     * URL that don't identify the repo itself, so "https://host/o/r.git" and
+     * "https://host/o/r" -- both plausible pastes for the same repo -- derive
+     * the same repoSlug rather than two disjoint learning-loop identities. */
+    static String normalizeRepoUrl(String url) {
+        String s = url.substring("https://".length());
+        if (s.endsWith("/")) s = s.substring(0, s.length() - 1);
+        if (s.endsWith(".git")) s = s.substring(0, s.length() - 4);
+        return s;
     }
 }

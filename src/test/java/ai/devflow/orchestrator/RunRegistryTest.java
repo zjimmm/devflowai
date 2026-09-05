@@ -82,4 +82,14 @@ class RunRegistryTest {
         assertThatThrownBy(() -> registry.start("task", "ext::sh -c \"true\""))
                 .isInstanceOf(IllegalArgumentException.class);
     }
+
+    @Test
+    void normalizeRepoUrlStripsTrailingGitAndSlashSoBothFormsMatch() {
+        assertThat(RunRegistry.normalizeRepoUrl("https://github.com/o/r.git"))
+                .isEqualTo(RunRegistry.normalizeRepoUrl("https://github.com/o/r"));
+        assertThat(RunRegistry.normalizeRepoUrl("https://github.com/o/r.git"))
+                .isEqualTo("github.com/o/r");
+        assertThat(RunRegistry.normalizeRepoUrl("https://github.com/o/r/"))
+                .isEqualTo("github.com/o/r");
+    }
 }
