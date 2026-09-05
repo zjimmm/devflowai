@@ -2,6 +2,7 @@ package ai.devflow.web;
 
 import ai.devflow.event.ApprovalRecorded;
 import ai.devflow.event.RunEventPublisher;
+import ai.devflow.history.SdlcRunRepository;
 import ai.devflow.orchestrator.ApprovalDecision;
 import ai.devflow.orchestrator.Gate;
 import ai.devflow.orchestrator.RunHandle;
@@ -11,6 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -26,11 +28,13 @@ public class RunController {
     private final RunRegistry registry;
     private final RunEventPublisher events;
     private final ApplicationEventPublisher applicationEvents;
+    private final SdlcRunRepository history;
 
-    public RunController(RunRegistry registry, RunEventPublisher events, ApplicationEventPublisher applicationEvents) {
+    public RunController(RunRegistry registry, RunEventPublisher events, ApplicationEventPublisher applicationEvents, SdlcRunRepository history) {
         this.registry = registry;
         this.events = events;
         this.applicationEvents = applicationEvents;
+        this.history = history;
     }
 
     @PostMapping
@@ -80,5 +84,10 @@ public class RunController {
                     runId, pendingGate.name(), decision.approved(), decision.reason()));
         }
         return ResponseEntity.ok(Map.of("status", "accepted"));
+    }
+
+    @GetMapping("/history")
+    public List<RunSummary> history() {
+        return history.findTop50ByOrderByStartedAtDesc().stream().map(RunSummary::from).toList();
     }
 }

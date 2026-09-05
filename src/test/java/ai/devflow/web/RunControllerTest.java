@@ -24,6 +24,7 @@ class RunControllerTest {
     MockMvc mvc;
     RunRegistry registry;
     RunEventPublisher events;
+    ai.devflow.history.SdlcRunRepository history;
     ObjectMapper json = new ObjectMapper();
     java.util.List<Object> publishedEvents = new java.util.ArrayList<>();
 
@@ -31,8 +32,9 @@ class RunControllerTest {
     void setUp() {
         registry = mock(RunRegistry.class);
         events = new RunEventPublisher();
+        history = mock(ai.devflow.history.SdlcRunRepository.class);
         mvc = MockMvcBuilders.standaloneSetup(
-                new RunController(registry, events, publishedEvents::add)).build();
+                new RunController(registry, events, publishedEvents::add, history)).build();
     }
 
     private RunHandle handleFor(String runId) throws Exception {
@@ -143,5 +145,20 @@ class RunControllerTest {
 
         pool.shutdownNow();
         handle.state().workspace().cleanup();
+    }
+
+    @Test
+    void historyReturnsRunsMostRecentFirst() throws Exception {
+        var newer = new ai.devflow.history.SdlcRun("newer", "add a class", "fixture", java.time.Instant.now());
+        var older = new ai.devflow.history.SdlcRun("older", "fix a bug", "fixture",
+                java.time.Instant.now().minusSeconds(60));
+        when(history.findTop50ByOrderByStartedAtDesc()).thenReturn(java.util.List.of(newer, older));
+
+        mvc.perform(get("/api/runs/history"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].runId").value("newer"))
+                .andExpect(jsonPath("$[0].task").value("add a class"))
+                .andExpect(jsonPath("$[0].status").value("RUNNING"))
+                .andExpect(jsonPath("$[1].runId").value("older"));
     }
 }
