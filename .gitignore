@@ -31,3 +31,6 @@ secrets/
 
 # Subagent-driven-development scratch (ledger, briefs, review packages)
 .superpowers/
+
+# Isolated worktrees for feature/phase work
+.worktrees/
