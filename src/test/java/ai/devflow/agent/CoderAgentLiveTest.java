@@ -2,9 +2,9 @@ package ai.devflow.agent;
 
 import ai.devflow.orchestrator.RunState;
 import ai.devflow.workspace.*;
+import ai.devflow.worker.CodingWorker;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.*;
 import org.springframework.boot.test.context.SpringBootTest;
 
@@ -16,14 +16,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 @EnabledIfEnvironmentVariable(named = "ANTHROPIC_API_KEY", matches = ".+")
 class CoderAgentLiveTest {
 
-    @Autowired @Qualifier("coder") ChatClient coderClient;
+    @Autowired @Qualifier("coder") CodingWorker coderWorker;
 
     @Test
     void producesRealChangesOnTheFixture() throws Exception {
         Workspace ws = new FixtureWorkspace(Path.of("src/test/resources/fixture"), "live-coder");
         ws.prepare();
         try {
-            var agent = new CoderAgent(coderClient);
+            var agent = new CoderAgent(coderWorker);
             var state = new RunState("live-coder",
                 "Add bean validation to UserController so a null or blank email is rejected.", ws);
 

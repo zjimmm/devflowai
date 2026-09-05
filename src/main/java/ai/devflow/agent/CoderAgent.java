@@ -2,18 +2,19 @@ package ai.devflow.agent;
 
 import ai.devflow.orchestrator.RunState;
 import ai.devflow.tools.FileTools;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.model.ChatResponse;
+import ai.devflow.worker.CodingWorker;
+import ai.devflow.worker.WorkerRequest;
+import ai.devflow.worker.WorkerResult;
 
 import java.util.List;
 import java.util.stream.Collectors;
 
 public class CoderAgent implements Agent {
 
-    private final ChatClient chatClient;
+    private final CodingWorker worker;
 
-    public CoderAgent(ChatClient chatClient) {
-        this.chatClient = chatClient;
+    public CoderAgent(CodingWorker worker) {
+        this.worker = worker;
     }
 
     @Override public String name() { return "coder"; }
@@ -21,29 +22,14 @@ public class CoderAgent implements Agent {
     @Override
     public AgentResult run(RunState state) {
         String prompt = buildPrompt(state);
+        List<Object> tools = List.of(new FileTools(state.workspace().guard()), state.gitTools());
 
-        ChatResponse response = chatClient.prompt()
-                .user(prompt)
-                .tools(new FileTools(state.workspace().guard()), state.gitTools())
-                .call()
-                .chatResponse();
-
-        String summary = textOf(response);
+        WorkerResult result = worker.run(new WorkerRequest(prompt, tools));
 
         // Derived from git, never from what the model claims.
         List<String> touched = state.gitTools().changedFiles();
 
-        return AgentResult.ok(name(), summary, touched, UsageMapper.from(response));
-    }
-
-    /** Response text, tolerating a null or empty response rather than throwing. */
-    private static String textOf(ChatResponse response) {
-        if (response == null || response.getResult() == null
-                || response.getResult().getOutput() == null) {
-            return "";
-        }
-        String text = response.getResult().getOutput().getText();
-        return text == null ? "" : text;
+        return AgentResult.ok(name(), result.text(), touched, result.tokens());
     }
 
     private String buildPrompt(RunState state) {

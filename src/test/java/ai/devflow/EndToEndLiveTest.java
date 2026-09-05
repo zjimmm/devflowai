@@ -3,6 +3,7 @@ package ai.devflow;
 import ai.devflow.agent.*;
 import ai.devflow.orchestrator.*;
 import ai.devflow.workspace.*;
+import ai.devflow.worker.SpringAiCodingWorker;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.ai.chat.client.ChatClient;
@@ -26,7 +27,7 @@ class EndToEndLiveTest {
         ws.prepare();
         try {
             var orchestrator = new Orchestrator(
-                    new CoderAgent(coderClient),
+                    new CoderAgent(new SpringAiCodingWorker(coderClient)),
                     new ReviewerAgent(reviewerClient),
                     (task, index) -> java.util.List.of(),
                     (state, findings, reason) -> ai.devflow.skill.ScribeDraft.EMPTY,

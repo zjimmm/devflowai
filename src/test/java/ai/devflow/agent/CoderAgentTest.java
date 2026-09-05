@@ -2,6 +2,7 @@ package ai.devflow.agent;
 
 import ai.devflow.orchestrator.RunState;
 import ai.devflow.workspace.*;
+import ai.devflow.worker.SpringAiCodingWorker;
 import org.junit.jupiter.api.*;
 import org.mockito.ArgumentCaptor;
 import org.springframework.ai.chat.client.ChatClient;
@@ -49,7 +50,7 @@ class CoderAgentTest {
         when(client.prompt().user(any(String.class)).tools(any(Object[].class)).call().chatResponse())
                 .thenReturn(responseWith("I made no changes.", 10, 5));
 
-        var agent = new CoderAgent(client);
+        var agent = new CoderAgent(new SpringAiCodingWorker(client));
         var state = new RunState("coder-test", "add a class", workspace);
 
         AgentResult result = agent.run(state);
@@ -73,7 +74,7 @@ class CoderAgentTest {
         when(client.prompt().user(any(String.class)).tools(any(Object[].class)).call().chatResponse())
                 .thenReturn(responseWith("done", 10, 5));
 
-        var agent = new CoderAgent(client);
+        var agent = new CoderAgent(new SpringAiCodingWorker(client));
         var state = new RunState("coder-test", "fix it", workspace);
         state.addFindings(List.of(Finding.fromHuman("use a DTO, don't annotate the entity")));
 
@@ -98,7 +99,7 @@ class CoderAgentTest {
         when(client.prompt().user(any(String.class)).tools(any(Object[].class)).call().chatResponse())
                 .thenReturn(responseWith("done", 10, 5));
 
-        var agent = new CoderAgent(client);
+        var agent = new CoderAgent(new SpringAiCodingWorker(client));
         var state = new RunState("coder-test", "fix it", workspace);
         state.setMemory("tests use JUnit 5 + AssertJ");
 
@@ -115,7 +116,7 @@ class CoderAgentTest {
         when(client.prompt().user(any(String.class)).tools(any(Object[].class)).call().chatResponse())
                 .thenReturn(responseWith("done", 321, 123));
 
-        var agent = new CoderAgent(client);
+        var agent = new CoderAgent(new SpringAiCodingWorker(client));
         var result = agent.run(new RunState("usage-test", "t", workspace));
 
         assertThat(result.tokens()).isEqualTo(new TokenUsage(321, 123));

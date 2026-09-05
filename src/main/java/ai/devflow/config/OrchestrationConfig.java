@@ -8,6 +8,8 @@ import ai.devflow.orchestrator.Orchestrator;
 import ai.devflow.orchestrator.RunRegistry;
 import ai.devflow.skill.FileSkillStore;
 import ai.devflow.skill.SkillStore;
+import ai.devflow.worker.CodingWorker;
+import ai.devflow.worker.SpringAiCodingWorker;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
@@ -29,9 +31,14 @@ import java.util.concurrent.Executors;
 @Configuration
 public class OrchestrationConfig {
 
+    @Bean @Qualifier("coder")
+    CodingWorker coderWorker(@Qualifier("coder") ChatClient coderChatClient) {
+        return new SpringAiCodingWorker(coderChatClient);
+    }
+
     @Bean
-    Agent coderAgent(@Qualifier("coder") ChatClient coderChatClient) {
-        return new CoderAgent(coderChatClient);
+    Agent coderAgent(@Qualifier("coder") CodingWorker coderWorker) {
+        return new CoderAgent(coderWorker);
     }
 
     @Bean
