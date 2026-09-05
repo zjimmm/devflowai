@@ -11,6 +11,13 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 
 import ai.devflow.agent.*;
+import ai.devflow.memory.FileMemoryStore;
+import ai.devflow.memory.MemoryStore;
+import ai.devflow.skill.FileSkillStore;
+import ai.devflow.skill.ScribeDraft;
+import ai.devflow.skill.SkillDraft;
+import ai.devflow.skill.SkillIndexEntry;
+import ai.devflow.skill.SkillStore;
 
 import java.nio.file.Files;
 import java.util.List;
@@ -79,6 +86,15 @@ class RunFlowIntegrationTest {
     @TestBean(name = "reviewerAgent", methodName = "stubReviewerAgent")
     Agent reviewerAgentOverride;
 
+    @TestBean(name = "scribeAgent", methodName = "stubScribeAgent")
+    Scribe scribeAgentOverride;
+
+    @TestBean(name = "skillStore", methodName = "stubSkillStore")
+    SkillStore skillStoreOverride;
+
+    @TestBean(name = "memoryStore", methodName = "stubMemoryStore")
+    MemoryStore memoryStoreOverride;
+
     /** Writes a real file so changedFiles() is non-empty, like a real coder. */
     static Agent stubCoderAgent() {
         return new Agent() {
@@ -97,9 +113,31 @@ class RunFlowIntegrationTest {
         return new Agent() {
             @Override public String name() { return "reviewer"; }
             @Override public AgentResult run(RunState s) {
+                boolean firstReviewForThisRun = s.history().stream().noneMatch(r -> r.agent().equals("reviewer"));
+                if (firstReviewForThisRun && s.task().contains("needs-a-correction")) {
+                    return AgentResult.needsWork("reviewer", "found an issue",
+                            List.of(new Finding(Finding.Origin.REVIEWER, Finding.Severity.HIGH,
+                                    "Added.java", 1, "missing validation")),
+                            TokenUsage.NONE);
+                }
                 return AgentResult.ok("reviewer", "looks correct", List.of(), TokenUsage.NONE);
             }
         };
+    }
+
+    static Scribe stubScribeAgent() {
+        return (state, findings, humanGuidance) -> new ScribeDraft(
+                new SkillDraft("validation-fixture", "Validating input on the fixture controller",
+                        List.of("validation"), "## Steps\n1. Add @Valid to the controller parameter\n"),
+                "tests use JUnit 5");
+    }
+
+    static SkillStore stubSkillStore() throws java.io.IOException {
+        return new FileSkillStore(Files.createTempDirectory("skills-test"));
+    }
+
+    static MemoryStore stubMemoryStore() throws java.io.IOException {
+        return new FileMemoryStore(Files.createTempDirectory("memory-test"));
     }
 
     @Test
@@ -152,5 +190,35 @@ class RunFlowIntegrationTest {
             Thread.sleep(10);
         }
         assertThat(handle.state().phase()).isEqualTo(RunPhase.FAILED);
+    }
+
+    @Test
+    void aBounceThenFixWritesASkillIntoTheHostSideStore() throws Exception {
+        String body = mvc.perform(post("/api/runs")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(new StartRunRequest("add validation, needs-a-correction", "fixture"))))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String runId = json.readTree(body).get("runId").asText();
+        RunHandle handle = registry.find(runId);
+        assertThat(handle).isNotNull();
+
+        long deadline = System.currentTimeMillis() + 60_000;
+        while (!handle.task().isDone()) {
+            if (System.currentTimeMillis() > deadline) throw new AssertionError("run never finished");
+            if (handle.gate().pending() != null) {
+                mvc.perform(post("/api/runs/" + runId + "/approve")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(json.writeValueAsString(new ApproveRequest(true, null))))
+                        .andExpect(status().isOk());
+            }
+            Thread.sleep(10);
+        }
+
+        assertThat(handle.state().phase()).isEqualTo(RunPhase.DONE);
+        assertThat(handle.state().reviewIterations()).isEqualTo(2);
+
+        List<SkillIndexEntry> index = skillStoreOverride.index("fixture");
+        assertThat(index).extracting(SkillIndexEntry::name).contains("validation-fixture");
     }
 }
