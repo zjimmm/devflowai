@@ -175,11 +175,47 @@ devflowai is a server-side web app, so cloning is not a preference — a server 
 no access to a remote user's disk. `LocalPathWorkspace` is coherent only in the
 single-user localhost case and is not planned.
 
+### 4.1 The repo string is not a trusted URL — it is untrusted input to a transport dispatcher
+
+Confirmed empirically against the resolved JGit 7.1.0 jar (not assumed):
+`Git.cloneRepository().setURI(...)` does not merely fetch a git repo over
+HTTPS — it dispatches on the URI's scheme to whichever transport JGit has
+registered, and several of those transports do things a server accepting
+operator-typed strings must never allow unfiltered:
+
+- **`ext::<command>`** spawns `<command>` as a real subprocess and speaks the
+  git protocol over its stdio. A URI of `ext::sh -c "<anything>"` executes
+  `<anything>` server-side. Verified live: passing this URI to
+  `CloneCommand` throws `TransportException: ... remote hung up
+  unexpectedly` — the *shape* of that exception (a live process whose pipe
+  closed, not "unsupported protocol") confirms the subprocess was actually
+  spawned, not rejected.
+- **`file://<path>`** and a **bare path with no scheme at all** both resolve
+  against the *server's own filesystem*. Verified live: `setURI(<an
+  absolute local path>)` clones successfully with no exception at all —
+  JGit silently treats a schemeless string as a local path.
+
+**Therefore:** the `repo` string must be validated against a strict allowlist
+— it must start with exactly `https://` — *before* it is passed to
+`CloneCommand`, never after, and never by scanning for known-bad substrings.
+An allowlist on the prefix is what closes all three vectors above at once,
+since none of `ext::`, `file://`, or a bare path starts with `https://`.
+`http://` is deliberately excluded too: the demo layer this phase serves
+(GitHub, GitLab, and similar public hosts) is universally HTTPS, and there is
+no reason to accept a scheme that sends whatever the URL contains in the
+clear.
+
+A clone is also an unbounded network operation with nothing today to bound
+it (unlike `BuildTools`, which already has a configurable timeout for the
+build it runs) — `ClonedWorkspace.prepare()` needs the same kind of timeout,
+for the same reason: a hung remote must not hang a run forever.
+
 ---
 
 ## 5. Run lifecycle
 
-1. `POST /api/runs {task, repoUrl?}` → `RunState` created, `runId` returned
+1. `POST /api/runs {task, repo}` → `RunState` created, `runId` returned
+   (`repo` is `"fixture"` or an `https://` git URL — see §4.1)
 2. Client opens SSE on `/api/runs/{id}/stream`
 3. Workspace prepared; branch `devflowai/<runId>` created
 4. **Router call** — given the task and the skill index (§6.2), returns *both* the
@@ -455,6 +491,12 @@ Initial-scope controls:
 
 - **Path confinement.** Canonicalize every tool path against `workspace.root()`
   and reject escapes. `../../.ssh/id_rsa` is a file path too.
+- **Repo-URL scheme confinement (Phase 6).** The same class of control as path
+  confinement, one layer up the stack: the operator-supplied `repo` string is
+  confined to `https://` before it ever reaches `ClonedWorkspace`/JGit. See
+  §4.1 for the live-verified reason this is load-bearing, not defensive
+  overkill — JGit's `ext::` transport executes an arbitrary command, and a
+  bare or `file://` path reads the *server's* filesystem.
 - **Gate 2** requires explicit human approval before any build runs, and the SSE
   event names the exact command.
 - **Temp-dir isolation.** Each run gets a fresh directory, deleted on completion
