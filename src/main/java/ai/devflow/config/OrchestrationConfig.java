@@ -1,11 +1,13 @@
 package ai.devflow.config;
 
-import ai.devflow.agent.Agent;
-import ai.devflow.agent.CoderAgent;
-import ai.devflow.agent.ReviewerAgent;
+import ai.devflow.agent.*;
 import ai.devflow.event.RunEventPublisher;
+import ai.devflow.memory.FileMemoryStore;
+import ai.devflow.memory.MemoryStore;
 import ai.devflow.orchestrator.Orchestrator;
 import ai.devflow.orchestrator.RunRegistry;
+import ai.devflow.skill.FileSkillStore;
+import ai.devflow.skill.SkillStore;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
@@ -37,6 +39,27 @@ public class OrchestrationConfig {
         return new ReviewerAgent(reviewerChatClient);
     }
 
+    @Bean
+    SkillPicker skillPickerAgent(@Qualifier("router") ChatClient routerChatClient) {
+        return new SkillPickerAgent(routerChatClient);
+    }
+
+    @Bean
+    Scribe scribeAgent(@Qualifier("scribe") ChatClient scribeChatClient) {
+        return new ScribeAgent(scribeChatClient);
+    }
+
+    /** Host-side, keyed by repo (spec §6.4) -- fixed for the bundled fixture; Phase 6's ClonedWorkspace will need a slug derived from the repo URL. */
+    @Bean
+    SkillStore skillStore() {
+        return new FileSkillStore(Path.of(System.getProperty("user.home"), ".devflowai", "skills"));
+    }
+
+    @Bean
+    MemoryStore memoryStore() {
+        return new FileMemoryStore(Path.of(System.getProperty("user.home"), ".devflowai", "memory"));
+    }
+
     /** One thread per in-flight run; runs block for minutes at gates. */
     @Bean(destroyMethod = "shutdownNow")
     ExecutorService runExecutor() {
@@ -48,12 +71,14 @@ public class OrchestrationConfig {
     }
 
     @Bean
-    Orchestrator orchestrator(Agent coderAgent, Agent reviewerAgent, RunEventPublisher events,
+    Orchestrator orchestrator(Agent coderAgent, Agent reviewerAgent, SkillPicker skillPicker, Scribe scribe,
+                              SkillStore skillStore, MemoryStore memoryStore, RunEventPublisher events,
+                              @Value("${devflowai.skills.repo-slug:fixture}") String repoSlug,
                               @Value("${devflowai.review.max-iterations:3}") int maxReviewIterations,
                               @Value("${devflowai.review.max-human-iterations:5}") int maxHumanIterations,
                               @Value("${devflowai.build.timeout-minutes:5}") long buildTimeoutMinutes) {
-        return new Orchestrator(coderAgent, reviewerAgent, events,
-                maxReviewIterations, maxHumanIterations, Duration.ofMinutes(buildTimeoutMinutes));
+        return new Orchestrator(coderAgent, reviewerAgent, skillPicker, scribe, skillStore, memoryStore, repoSlug,
+                events, maxReviewIterations, maxHumanIterations, Duration.ofMinutes(buildTimeoutMinutes));
     }
 
     @Bean

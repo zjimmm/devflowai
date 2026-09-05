@@ -15,3 +15,5 @@ devflowai:
     timeout-minutes: 5
   fixture:
     path: src/test/resources/fixture
+  skills:
+    repo-slug: fixture

@@ -2,14 +2,20 @@ package ai.devflow.orchestrator;
 
 import ai.devflow.agent.*;
 import ai.devflow.event.RunEventPublisher;
+import ai.devflow.memory.MemoryStore;
+import ai.devflow.skill.*;
 import ai.devflow.workspace.*;
 import org.junit.jupiter.api.*;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -57,8 +63,37 @@ class OrchestratorTest {
         }
     }
 
+    /** In-memory SkillStore double: starts with the given entries, records what gets written. */
+    static class FakeSkillStore implements SkillStore {
+        final List<SkillIndexEntry> entries;
+        final Map<String, String> full = new HashMap<>();
+        final List<SkillDraft> written = new ArrayList<>();
+        FakeSkillStore() { this(List.of()); }
+        FakeSkillStore(List<SkillIndexEntry> entries) { this.entries = entries; }
+        @Override public List<SkillIndexEntry> index(String repoSlug) { return entries; }
+        @Override public String readFull(String repoSlug, String name) { return full.getOrDefault(name, ""); }
+        @Override public String write(String repoSlug, String runId, SkillDraft draft) {
+            written.add(draft);
+            return SkillFileFormat.render(draft, runId);
+        }
+    }
+
+    static class FakeMemoryStore implements MemoryStore {
+        String content = "";
+        final List<String> appended = new ArrayList<>();
+        @Override public String read(String repoSlug) { return content; }
+        @Override public String append(String repoSlug, String fact) { appended.add(fact); return content; }
+    }
+
     private Orchestrator orchestrator(Agent coder, Agent reviewer) {
-        return new Orchestrator(coder, reviewer, events, 3, 5, Duration.ofMinutes(1));
+        return orchestrator(coder, reviewer, (task, index) -> List.of(),
+                (state, findings, reason) -> ScribeDraft.EMPTY, new FakeSkillStore(), new FakeMemoryStore());
+    }
+
+    private Orchestrator orchestrator(Agent coder, Agent reviewer, SkillPicker picker, Scribe scribe,
+                                      SkillStore skillStore, MemoryStore memoryStore) {
+        return new Orchestrator(coder, reviewer, picker, scribe, skillStore, memoryStore, "fixture",
+                events, 3, 5, Duration.ofMinutes(1));
     }
 
     /** Writes a real file so changedFiles() is non-empty, as a real coder would. */
@@ -226,5 +261,45 @@ class OrchestratorTest {
 
         assertThat(state.history()).allSatisfy(r ->
                 assertThat(r.summary().length()).isLessThan(2_000));
+    }
+
+    @Test
+    void loadedSkillsAndMemoryReachTheCoderThroughRunState() throws Exception {
+        var coder = writingCoder("done");
+        var reviewer = new ScriptedAgent("reviewer",
+                List.of(AgentResult.ok("reviewer", "ok", List.of(), TokenUsage.NONE)));
+
+        var skillStore = new FakeSkillStore(
+                List.of(new SkillIndexEntry("spring-validation", "desc", List.of("validation"))));
+        skillStore.full.put("spring-validation", "## Steps\n1. Add @Valid\n");
+        var memoryStore = new FakeMemoryStore();
+        memoryStore.content = "- tests use JUnit 5";
+        SkillPicker picker = (task, index) -> List.of("spring-validation");
+
+        var state = new RunState("g14", "t", workspace);
+        var gate = new ApprovalGate(Duration.ofSeconds(10));
+        var orchestrator = orchestrator(coder, reviewer, picker, (s, f, r) -> ScribeDraft.EMPTY, skillStore, memoryStore);
+
+        runApprovingAll(orchestrator, state, gate);
+
+        assertThat(state.memory()).isEqualTo("- tests use JUnit 5");
+        assertThat(state.loadedSkills()).containsExactly("## Steps\n1. Add @Valid\n");
+    }
+
+    @Test
+    void emptySkillIndexNeverInvokesThePicker() throws Exception {
+        var coder = writingCoder("done");
+        var reviewer = new ScriptedAgent("reviewer",
+                List.of(AgentResult.ok("reviewer", "ok", List.of(), TokenUsage.NONE)));
+        SkillPicker explodingPicker = (task, index) -> { throw new AssertionError("picker should not be called"); };
+
+        var state = new RunState("g15", "t", workspace);
+        var gate = new ApprovalGate(Duration.ofSeconds(10));
+        var orchestrator = orchestrator(coder, reviewer, explodingPicker, (s, f, r) -> ScribeDraft.EMPTY,
+                new FakeSkillStore(), new FakeMemoryStore());
+
+        var outcome = runApprovingAll(orchestrator, state, gate);
+
+        assertThat(outcome.approved()).isTrue();
     }
 }

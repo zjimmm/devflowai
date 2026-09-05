@@ -28,6 +28,18 @@ class EndToEndLiveTest {
             var orchestrator = new Orchestrator(
                     new CoderAgent(coderClient),
                     new ReviewerAgent(reviewerClient),
+                    (task, index) -> java.util.List.of(),
+                    (state, findings, reason) -> ai.devflow.skill.ScribeDraft.EMPTY,
+                    new ai.devflow.skill.SkillStore() {
+                        @Override public java.util.List<ai.devflow.skill.SkillIndexEntry> index(String repoSlug) { return java.util.List.of(); }
+                        @Override public String readFull(String repoSlug, String name) { return ""; }
+                        @Override public String write(String repoSlug, String runId, ai.devflow.skill.SkillDraft draft) { return ""; }
+                    },
+                    new ai.devflow.memory.MemoryStore() {
+                        @Override public String read(String repoSlug) { return ""; }
+                        @Override public String append(String repoSlug, String fact) { return ""; }
+                    },
+                    "fixture",
                     new ai.devflow.event.RunEventPublisher(),
                     3, 5, java.time.Duration.ofMinutes(5));
 

@@ -3,8 +3,13 @@ package ai.devflow.orchestrator;
 import ai.devflow.agent.Agent;
 import ai.devflow.agent.AgentResult;
 import ai.devflow.agent.Finding;
+import ai.devflow.agent.Scribe;
+import ai.devflow.agent.SkillPicker;
 import ai.devflow.event.RunEvent;
 import ai.devflow.event.RunEventPublisher;
+import ai.devflow.memory.MemoryStore;
+import ai.devflow.skill.SkillIndexEntry;
+import ai.devflow.skill.SkillStore;
 import ai.devflow.tools.BuildTools;
 
 import java.time.Duration;
@@ -24,15 +29,27 @@ public class Orchestrator {
 
     private final Agent coder;
     private final Agent reviewer;
+    private final SkillPicker skillPicker;
+    private final Scribe scribe;
+    private final SkillStore skillStore;
+    private final MemoryStore memoryStore;
+    private final String repoSlug;
     private final RunEventPublisher events;
     private final int maxReviewIterations;
     private final int maxHumanIterations;
     private final Duration buildTimeout;
 
-    public Orchestrator(Agent coder, Agent reviewer, RunEventPublisher events,
-                        int maxReviewIterations, int maxHumanIterations, Duration buildTimeout) {
+    public Orchestrator(Agent coder, Agent reviewer, SkillPicker skillPicker, Scribe scribe,
+                        SkillStore skillStore, MemoryStore memoryStore, String repoSlug,
+                        RunEventPublisher events, int maxReviewIterations, int maxHumanIterations,
+                        Duration buildTimeout) {
         this.coder = coder;
         this.reviewer = reviewer;
+        this.skillPicker = skillPicker;
+        this.scribe = scribe;
+        this.skillStore = skillStore;
+        this.memoryStore = memoryStore;
+        this.repoSlug = repoSlug;
         this.events = events;
         this.maxReviewIterations = maxReviewIterations;
         this.maxHumanIterations = maxHumanIterations;
@@ -60,6 +77,8 @@ public class Orchestrator {
     private RunOutcome execute(RunState state, ApprovalGate gate) {
         emit(state, "step", "Workspace ready — branch " + state.workspace().branchName(),
                 Map.of("branch", state.workspace().branchName()));
+
+        loadKnowledge(state);
 
         // ---- Gate 1: pre-flight -------------------------------------------
         // Not a filesystem guard (PathGuard is, and the workspace is a
@@ -215,6 +234,25 @@ public class Orchestrator {
 
     private void emit(RunState state, String type, String message, Map<String, Object> data) {
         events.publish(state.runId(), RunEvent.of(type, message, data));
+    }
+
+    /** Loads memory whole and picks ≤3 relevant skills, before any Opus 5 call (spec §5 steps 4-5). */
+    private void loadKnowledge(RunState state) {
+        String memory = memoryStore.read(repoSlug);
+        if (!memory.isBlank()) state.setMemory(memory);
+
+        List<SkillIndexEntry> index = skillStore.index(repoSlug);
+        if (index.isEmpty()) return; // never spend a call picking from nothing
+
+        List<String> names = skillPicker.pick(state.task(), index);
+        for (String name : names) {
+            String full = skillStore.readFull(repoSlug, name);
+            if (!full.isBlank()) state.addLoadedSkill(full);
+        }
+        if (!names.isEmpty()) {
+            emit(state, "step", "Loaded " + names.size() + " skill(s): " + String.join(", ", names),
+                    Map.of("skills", names));
+        }
     }
 
     /** Runs on every exit path — normal, rejected, or thrown. */

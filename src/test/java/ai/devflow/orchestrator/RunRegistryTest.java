@@ -2,6 +2,11 @@ package ai.devflow.orchestrator;
 
 import ai.devflow.agent.*;
 import ai.devflow.event.RunEventPublisher;
+import ai.devflow.memory.MemoryStore;
+import ai.devflow.skill.ScribeDraft;
+import ai.devflow.skill.SkillDraft;
+import ai.devflow.skill.SkillIndexEntry;
+import ai.devflow.skill.SkillStore;
 import org.junit.jupiter.api.*;
 
 import java.time.Duration;
@@ -23,10 +28,24 @@ class RunRegistryTest {
         }
     }
 
+    /** No skills/memory on disk for this test -- nothing to load, nothing to persist. */
+    static class NoOpSkillStore implements SkillStore {
+        @Override public List<SkillIndexEntry> index(String repoSlug) { return List.of(); }
+        @Override public String readFull(String repoSlug, String name) { return ""; }
+        @Override public String write(String repoSlug, String runId, SkillDraft draft) { return ""; }
+    }
+
+    static class NoOpMemoryStore implements MemoryStore {
+        @Override public String read(String repoSlug) { return ""; }
+        @Override public String append(String repoSlug, String fact) { return ""; }
+    }
+
     @BeforeEach
     void setUp() {
         var events = new RunEventPublisher();
         var orchestrator = new Orchestrator(new StubAgent("coder"), new StubAgent("reviewer"),
+                (task, index) -> List.of(), (state, findings, reason) -> ScribeDraft.EMPTY,
+                new NoOpSkillStore(), new NoOpMemoryStore(), "fixture",
                 events, 3, 5, Duration.ofMinutes(1));
         registry = new RunRegistry(orchestrator, events, Executors.newCachedThreadPool(),
                 java.nio.file.Path.of("src/test/resources/fixture"), Duration.ofSeconds(2));
