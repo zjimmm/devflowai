@@ -139,7 +139,9 @@ public class Orchestrator {
                 case NEEDS_WORK -> {
                     state.addFindings(reviewed.findings());
                     emit(state, "step", "Reviewer — needs work: " + reviewed.summary(),
-                            Map.of("findings", reviewed.findings().size()));
+                            Map.of("findings", reviewed.findings().size(),
+                                   "findingsDetail", reviewed.findings(),
+                                   "reviewIteration", state.reviewIterations()));
                     continue;
                 }
                 case OK -> {

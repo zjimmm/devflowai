@@ -1,11 +1,13 @@
 package ai.devflow.history;
 
+import ai.devflow.agent.Finding;
 import ai.devflow.event.RunRecorded;
 import ai.devflow.orchestrator.RunPhase;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -19,10 +21,12 @@ public class SdlcRunRecorder {
 
     private final SdlcRunRepository runs;
     private final StageExecutionRepository stages;
+    private final ReviewFindingRepository findings;
 
-    public SdlcRunRecorder(SdlcRunRepository runs, StageExecutionRepository stages) {
+    public SdlcRunRecorder(SdlcRunRepository runs, StageExecutionRepository stages, ReviewFindingRepository findings) {
         this.runs = runs;
         this.stages = stages;
+        this.findings = findings;
     }
 
     @EventListener
@@ -38,6 +42,7 @@ public class SdlcRunRecorder {
 
             maybeCreateRun(runId, data);
             maybeRecordStage(runId, data);
+            maybeRecordFindings(runId, data);
             maybeFinishRun(runId, recorded.event().type(), recorded.event().message(), data);
         } catch (RuntimeException e) {
             System.err.println("SdlcRunRecorder failed to record an event for run " + recorded.runId() + ": " + e);
@@ -62,6 +67,16 @@ public class SdlcRunRecorder {
         Instant now = Instant.now();
         open.ifPresent(s -> { s.close(now); stages.save(s); });
         stages.save(new StageExecution(runId, phase, now));
+    }
+
+    private void maybeRecordFindings(String runId, Map<String, Object> data) {
+        if (!(data.get("findingsDetail") instanceof List<?> list)) return;
+        int iteration = data.get("reviewIteration") instanceof Integer i ? i : 0;
+        for (Object o : list) {
+            if (o instanceof Finding f) {
+                findings.save(new ReviewFinding(runId, iteration, f));
+            }
+        }
     }
 
     private void maybeFinishRun(String runId, String type, String message, Map<String, Object> data) {

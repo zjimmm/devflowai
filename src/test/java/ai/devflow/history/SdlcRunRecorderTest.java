@@ -25,6 +25,7 @@ class SdlcRunRecorderTest {
 
     @Autowired SdlcRunRepository runs;
     @Autowired StageExecutionRepository stages;
+    @Autowired ReviewFindingRepository findings;
     @Autowired SdlcRunRecorder recorder;
 
     @Test
@@ -116,5 +117,19 @@ class SdlcRunRecorderTest {
                 Map.of("task", "t", "repoSlug", "fixture", "phase", "NOT_A_REAL_PHASE")));
 
         assertThatCode(() -> recorder.onRunRecorded(event)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void needsWorkEventWithFindingsDetailWritesReviewFindingRows() {
+        var f = new ai.devflow.agent.Finding(ai.devflow.agent.Finding.Origin.REVIEWER,
+                ai.devflow.agent.Finding.Severity.HIGH, "A.java", 14, "missing @Valid");
+
+        recorder.onRunRecorded(new RunRecorded("r8", new RunEvent("step", "Reviewer — needs work: nope",
+                Map.of("phase", "REVIEWING", "findings", 1, "findingsDetail", java.util.List.of(f), "reviewIteration", 1))));
+
+        var saved = findings.findByRunId("r8");
+        assertThat(saved).hasSize(1);
+        assertThat(saved.get(0).message()).isEqualTo("missing @Valid");
+        assertThat(saved.get(0).reviewIteration()).isEqualTo(1);
     }
 }
