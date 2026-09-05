@@ -27,12 +27,21 @@ public class SdlcRunRecorder {
 
     @EventListener
     public void onRunRecorded(RunRecorded recorded) {
-        String runId = recorded.runId();
-        Map<String, Object> data = recorded.event().data();
+        // Write-behind: this reacts synchronously, in the publisher's thread,
+        // to every step/gate/done/error event Orchestrator.emit() fires -- a
+        // persistence hiccup (or an unexpected phase string) here must never
+        // propagate out and abort the live run it's only trying to record.
+        // Same drop-and-continue precedent as RunEventPublisher.sendQuietly.
+        try {
+            String runId = recorded.runId();
+            Map<String, Object> data = recorded.event().data();
 
-        maybeCreateRun(runId, data);
-        maybeRecordStage(runId, data);
-        maybeFinishRun(runId, recorded.event().type(), recorded.event().message(), data);
+            maybeCreateRun(runId, data);
+            maybeRecordStage(runId, data);
+            maybeFinishRun(runId, recorded.event().type(), recorded.event().message(), data);
+        } catch (RuntimeException e) {
+            System.err.println("SdlcRunRecorder failed to record an event for run " + recorded.runId() + ": " + e);
+        }
     }
 
     private void maybeCreateRun(String runId, Map<String, Object> data) {

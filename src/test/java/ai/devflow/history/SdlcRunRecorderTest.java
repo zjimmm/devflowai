@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 
 // @DataJpaTest does not exist in this project's resolved Spring Boot 4.1.1
 // dependencies (confirmed in Task 1) -- @SpringBootTest + @Transactional on
@@ -104,5 +105,16 @@ class SdlcRunRecorderTest {
         recorder.onRunRecorded(new RunRecorded("r7", new RunEvent("gate", "about to run", Map.of("phase", "PREPARING"))));
 
         assertThat(stages.findAll()).filteredOn(s -> s.runId().equals("r7")).hasSize(1);
+    }
+
+    @Test
+    void aRecordingFailureIsSwallowedRatherThanPropagatingToTheLiveRun() {
+        // An unexpected phase string (RunPhase.valueOf throws IllegalArgumentException)
+        // stands in for any persistence hiccup here -- write-behind history
+        // bookkeeping must never be able to abort the run it's recording.
+        var event = new RunRecorded("r8", new RunEvent("step", "bogus",
+                Map.of("task", "t", "repoSlug", "fixture", "phase", "NOT_A_REAL_PHASE")));
+
+        assertThatCode(() -> recorder.onRunRecorded(event)).doesNotThrowAnyException();
     }
 }
