@@ -83,6 +83,23 @@
       <button id="reject">Reject</button>
     </div>
   </section>
+
+  <hr>
+
+  <section id="history">
+    <h2 style="font-size:0.95rem; margin:0 0 0.6rem;">Past runs</h2>
+    <button id="history-refresh" type="button">Refresh</button>
+    <table style="width:100%; border-collapse:collapse; margin-top:0.6rem; font-size:0.85rem;">
+      <thead>
+        <tr style="text-align:left; color:var(--muted);">
+          <th style="padding:0.3rem 0;">Task</th>
+          <th>Status</th>
+          <th>Started</th>
+        </tr>
+      </thead>
+      <tbody id="history-body"></tbody>
+    </table>
+  </section>
 </main>
 
 <script>
@@ -214,6 +231,27 @@
     ['step', 'gate', 'done', 'error', 'aborted', 'warn'].forEach(n => source.addEventListener(n, onEvent));
     source.onerror = () => { source.close(); $('run').disabled = false; };
   };
+
+  function renderHistory(rows) {
+    const body = $('history-body');
+    body.innerHTML = '';
+    rows.forEach(r => {
+      const tr = document.createElement('tr');
+      tr.style.borderTop = '1px solid var(--line)';
+      const task = r.task.length > 60 ? r.task.slice(0, 60) + '…' : r.task;
+      tr.innerHTML = `<td style="padding:0.3rem 0;">${task}</td><td>${r.status}</td><td>${new Date(r.startedAt).toLocaleString()}</td>`;
+      body.appendChild(tr);
+    });
+  }
+
+  async function loadHistory() {
+    const res = await fetch('/api/runs/history');
+    if (!res.ok) return;
+    renderHistory(await res.json());
+  }
+
+  $('history-refresh').onclick = loadHistory;
+  loadHistory();
 </script>
 </body>
 </html>

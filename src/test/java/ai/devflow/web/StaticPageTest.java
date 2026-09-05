@@ -33,6 +33,8 @@ class StaticPageTest {
                 // The three things the operator actually interacts with.
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("id=\"task\"")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("id=\"run\"")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("EventSource")));
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("EventSource")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("id=\"history\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("/api/runs/history")));
     }
 }
