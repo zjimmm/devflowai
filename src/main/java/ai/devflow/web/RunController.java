@@ -16,9 +16,9 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * The entire HTTP surface: start a run, watch it, answer a gate.
+ * The entire HTTP surface: start a run, watch it, answer a gate, and retrieve history.
  *
- * <p>Three endpoints and nothing else — the page reaches no other route
+ * <p>Four endpoints and nothing else — the page reaches no other route
  * (spec §5.3).
  */
 @RestController
