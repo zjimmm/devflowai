@@ -2,6 +2,7 @@ package ai.devflow.web;
 
 import ai.devflow.orchestrator.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -220,5 +221,58 @@ class RunFlowIntegrationTest {
 
         List<SkillIndexEntry> index = skillStoreOverride.index("fixture");
         assertThat(index).extracting(SkillIndexEntry::name).contains("validation-fixture");
+    }
+
+    @Test
+    @Tag("live")
+    void aClonedRepoFlowsThroughGate1AndAbortsCleanlyAtGate2() throws Exception {
+        String body = mvc.perform(post("/api/runs")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(
+                                new StartRunRequest("add a class", "https://github.com/zjimmm/devflowai.git"))))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String runId = json.readTree(body).get("runId").asText();
+        RunHandle handle = registry.find(runId);
+        assertThat(handle).isNotNull();
+
+        // Approve Gate 1 (pre-flight) so the coder/reviewer stubs run against
+        // the REAL cloned repo, then reject Gate 2 without a reason. Reaching
+        // Gate 1 at all is itself the proof the clone succeeded -- if it
+        // hadn't, RunRegistry's own catch block would have published an
+        // error and completed the run before Orchestrator.run (and so Gate 1)
+        // was ever reached. This deliberately never lets BuildTools run a
+        // real build against devflowai's own test suite inside its own clone.
+        long gate1Deadline = System.currentTimeMillis() + 120_000; // a real network clone can be slow
+        while (handle.gate().pending() != Gate.PRE_FLIGHT) {
+            if (System.currentTimeMillis() > gate1Deadline) {
+                throw new AssertionError("clone never reached Gate 1 (pending=" + handle.gate().pending() + ")");
+            }
+            Thread.sleep(5);
+        }
+        mvc.perform(post("/api/runs/" + runId + "/approve")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(new ApproveRequest(true, null))))
+                .andExpect(status().isOk());
+
+        long gate2Deadline = System.currentTimeMillis() + 30_000;
+        while (handle.gate().pending() != Gate.BEFORE_BUILD) {
+            if (System.currentTimeMillis() > gate2Deadline) {
+                throw new AssertionError("run never reached Gate 2 (pending=" + handle.gate().pending() + ")");
+            }
+            Thread.sleep(5);
+        }
+        mvc.perform(post("/api/runs/" + runId + "/approve")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(new ApproveRequest(false, null))))
+                .andExpect(status().isOk());
+
+        long deadline = System.currentTimeMillis() + 30_000;
+        while (!handle.task().isDone()) {
+            if (System.currentTimeMillis() > deadline) throw new AssertionError("run never ended");
+            Thread.sleep(10);
+        }
+
+        assertThat(handle.state().phase()).isEqualTo(RunPhase.FAILED);
     }
 }
