@@ -4,6 +4,13 @@ spring:
   ai:
     anthropic:
       api-key: ${ANTHROPIC_API_KEY}
+  datasource:
+    url: jdbc:h2:file:~/.devflowai/history/devflowai
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
 
 devflowai:
   review:
