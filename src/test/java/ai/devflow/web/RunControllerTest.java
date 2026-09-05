@@ -13,6 +13,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.concurrent.Executors;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -24,12 +25,14 @@ class RunControllerTest {
     RunRegistry registry;
     RunEventPublisher events;
     ObjectMapper json = new ObjectMapper();
+    java.util.List<Object> publishedEvents = new java.util.ArrayList<>();
 
     @BeforeEach
     void setUp() {
         registry = mock(RunRegistry.class);
         events = new RunEventPublisher();
-        mvc = MockMvcBuilders.standaloneSetup(new RunController(registry, events)).build();
+        mvc = MockMvcBuilders.standaloneSetup(
+                new RunController(registry, events, publishedEvents::add)).build();
     }
 
     private RunHandle handleFor(String runId) throws Exception {
@@ -116,6 +119,27 @@ class RunControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json.writeValueAsString(new ApproveRequest(true, null))))
                 .andExpect(status().isOk());
+
+        pool.shutdownNow();
+        handle.state().workspace().cleanup();
+    }
+
+    @Test
+    void approvingAPendingGateFiresAnApprovalRecordedEvent() throws Exception {
+        RunHandle handle = handleFor("run-3");
+        when(registry.find("run-3")).thenReturn(handle);
+
+        var pool = Executors.newSingleThreadExecutor();
+        pool.submit(() -> handle.gate().await(Gate.PRE_FLIGHT));
+        while (handle.gate().pending() == null) Thread.sleep(5);
+
+        mvc.perform(post("/api/runs/run-3/approve")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(new ApproveRequest(true, null))))
+                .andExpect(status().isOk());
+
+        assertThat(publishedEvents).containsExactly(
+                new ai.devflow.event.ApprovalRecorded("run-3", "PRE_FLIGHT", true, null));
 
         pool.shutdownNow();
         handle.state().workspace().cleanup();

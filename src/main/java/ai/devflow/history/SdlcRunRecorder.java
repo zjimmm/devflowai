@@ -1,7 +1,9 @@
 package ai.devflow.history;
 
 import ai.devflow.agent.Finding;
+import ai.devflow.event.ApprovalRecorded;
 import ai.devflow.event.RunRecorded;
+import ai.devflow.orchestrator.Gate;
 import ai.devflow.orchestrator.RunPhase;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
@@ -22,11 +24,14 @@ public class SdlcRunRecorder {
     private final SdlcRunRepository runs;
     private final StageExecutionRepository stages;
     private final ReviewFindingRepository findings;
+    private final ApprovalRepository approvals;
 
-    public SdlcRunRecorder(SdlcRunRepository runs, StageExecutionRepository stages, ReviewFindingRepository findings) {
+    public SdlcRunRecorder(SdlcRunRepository runs, StageExecutionRepository stages,
+                            ReviewFindingRepository findings, ApprovalRepository approvals) {
         this.runs = runs;
         this.stages = stages;
         this.findings = findings;
+        this.approvals = approvals;
     }
 
     @EventListener
@@ -46,6 +51,20 @@ public class SdlcRunRecorder {
             maybeFinishRun(runId, recorded.event().type(), recorded.event().message(), data);
         } catch (RuntimeException e) {
             System.err.println("SdlcRunRecorder failed to record an event for run " + recorded.runId() + ": " + e);
+        }
+    }
+
+    @EventListener
+    public void onApprovalRecorded(ApprovalRecorded recorded) {
+        // Same drop-and-continue precedent as onRunRecorded above: this is
+        // invoked synchronously from RunController.approve's calling thread,
+        // so a persistence hiccup (or an unexpected gate string) here must
+        // never propagate out and abort the live run it's only recording.
+        try {
+            approvals.save(new Approval(recorded.runId(), Gate.valueOf(recorded.gate()),
+                    recorded.approved(), recorded.reason(), Instant.now()));
+        } catch (RuntimeException e) {
+            System.err.println("SdlcRunRecorder failed to record an approval for run " + recorded.runId() + ": " + e);
         }
     }
 

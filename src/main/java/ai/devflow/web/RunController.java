@@ -1,9 +1,12 @@
 package ai.devflow.web;
 
+import ai.devflow.event.ApprovalRecorded;
 import ai.devflow.event.RunEventPublisher;
 import ai.devflow.orchestrator.ApprovalDecision;
+import ai.devflow.orchestrator.Gate;
 import ai.devflow.orchestrator.RunHandle;
 import ai.devflow.orchestrator.RunRegistry;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -22,10 +25,12 @@ public class RunController {
 
     private final RunRegistry registry;
     private final RunEventPublisher events;
+    private final ApplicationEventPublisher applicationEvents;
 
-    public RunController(RunRegistry registry, RunEventPublisher events) {
+    public RunController(RunRegistry registry, RunEventPublisher events, ApplicationEventPublisher applicationEvents) {
         this.registry = registry;
         this.events = events;
+        this.applicationEvents = applicationEvents;
     }
 
     @PostMapping
@@ -63,11 +68,16 @@ public class RunController {
                 ? ApprovalDecision.approve()
                 : ApprovalDecision.rejectWith(request.reason());
 
+        Gate pendingGate = handle.gate().pending();
         // False means nothing was parked: a stale click, a double submit, or a
         // gate that already timed out. Report it rather than pretending.
         if (!handle.gate().decide(decision)) {
             return ResponseEntity.status(409)
                     .body(Map.of("error", "no gate is currently awaiting a decision"));
+        }
+        if (pendingGate != null) {
+            applicationEvents.publishEvent(new ApprovalRecorded(
+                    runId, pendingGate.name(), decision.approved(), decision.reason()));
         }
         return ResponseEntity.ok(Map.of("status", "accepted"));
     }

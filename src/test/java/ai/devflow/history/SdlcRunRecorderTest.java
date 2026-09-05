@@ -26,6 +26,7 @@ class SdlcRunRecorderTest {
     @Autowired SdlcRunRepository runs;
     @Autowired StageExecutionRepository stages;
     @Autowired ReviewFindingRepository findings;
+    @Autowired ApprovalRepository approvals;
     @Autowired SdlcRunRecorder recorder;
 
     @Test
@@ -131,5 +132,28 @@ class SdlcRunRecorderTest {
         assertThat(saved).hasSize(1);
         assertThat(saved.get(0).message()).isEqualTo("missing @Valid");
         assertThat(saved.get(0).reviewIteration()).isEqualTo(1);
+    }
+
+    @Test
+    void approvalRecordedEventWritesAnApprovalRow() {
+        recorder.onApprovalRecorded(new ai.devflow.event.ApprovalRecorded("r9", "BEFORE_BUILD", false, "use a DTO"));
+
+        var saved = approvals.findByRunId("r9");
+        assertThat(saved).hasSize(1);
+        assertThat(saved.get(0).gate()).isEqualTo(ai.devflow.orchestrator.Gate.BEFORE_BUILD);
+        assertThat(saved.get(0).approved()).isFalse();
+        assertThat(saved.get(0).reason()).isEqualTo("use a DTO");
+    }
+
+    @Test
+    void anApprovalRecordingFailureIsSwallowedRatherThanPropagatingToTheLiveRun() {
+        // A malformed gate string (Gate.valueOf throws IllegalArgumentException)
+        // stands in for any persistence hiccup here -- this listener is invoked
+        // synchronously from RunController.approve's calling thread and must
+        // never be able to abort a live run either.
+        var event = new ai.devflow.event.ApprovalRecorded("r10", "NOT_A_REAL_GATE", true, null);
+
+        assertThatCode(() -> recorder.onApprovalRecorded(event)).doesNotThrowAnyException();
+        assertThat(approvals.findByRunId("r10")).isEmpty();
     }
 }
