@@ -50,6 +50,7 @@
     <div class="row">
       <label for="repo">Repo</label>
       <select id="repo"><option value="fixture">bundled fixture</option></select>
+      <input id="repo-url" placeholder="or paste a public https:// git URL instead" style="margin-top:0.4rem">
     </div>
     <div class="row">
       <label for="task">Task</label>
@@ -177,6 +178,12 @@
   $('run').onclick = async () => {
     const task = $('task').value.trim();
     if (!task) return;
+    const repoUrl = $('repo-url').value.trim();
+    if (repoUrl && !repoUrl.startsWith('https://')) {
+      log('error', 'Repo URL must start with https://');
+      return;
+    }
+    const repo = repoUrl || $('repo').value;
     $('run').disabled = true;
     $('log').innerHTML = '';
     hideGate();
@@ -184,7 +191,7 @@
     const res = await fetch('/api/runs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ task, repo: $('repo').value })
+      body: JSON.stringify({ task, repo })
     });
     if (!res.ok) {
       log('error', `Could not start the run (HTTP ${res.status})`);
