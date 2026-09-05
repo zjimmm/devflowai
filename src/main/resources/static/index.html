@@ -101,7 +101,14 @@
   function showGate(message, data) {
     $('gate-title').textContent = message;
     const files = (data && data.filesTouched) || [];
-    $('gate-detail').textContent = files.length ? files.join('\n') : '';
+    let detail = files.length ? files.join('\n') : '';
+    if (data && data.skillDraft) {
+      detail += (detail ? '\n\n' : '') + `Learned: ${data.skillDraft.name} — ${data.skillDraft.description}`;
+    }
+    if (data && data.memoryFact) {
+      detail += (detail ? '\n' : '') + `Remembered: ${data.memoryFact}`;
+    }
+    $('gate-detail').textContent = detail;
     $('reason').value = '';
     $('gate').classList.remove('hidden');
   }
