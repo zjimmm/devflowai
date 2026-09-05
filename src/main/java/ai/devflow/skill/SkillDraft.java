@@ -1,5 +1,7 @@
 package ai.devflow.skill;
 
+import ai.devflow.util.Slug;
+
 import java.util.List;
 
 public record SkillDraft(String name, String description, List<String> triggers, String body) {
@@ -14,10 +16,11 @@ public record SkillDraft(String name, String description, List<String> triggers,
      * by {@code FileSkillStore.readFull}, which must resolve the same file
      * that {@code FileSkillStore.write} created -- the name reported back by
      * {@code index()}/the picker is the raw frontmatter {@code name:} field,
-     * not the slug the file was actually written under.
+     * not the slug the file was actually written under. Delegates to the
+     * shared {@link Slug} utility (Phase 6 needs the identical rule for
+     * repo-URL-to-repoSlug derivation).
      */
     public static String slugify(String name) {
-        String s = name.toLowerCase().trim().replaceAll("[^a-z0-9]+", "-");
-        return s.replaceAll("(^-+|-+$)", "");
+        return Slug.of(name);
     }
 }
