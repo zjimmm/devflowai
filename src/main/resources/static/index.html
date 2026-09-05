@@ -20,10 +20,15 @@
     .row { margin-bottom:0.9rem; }
     input, select, textarea { width:100%; padding:0.55rem 0.7rem; font:inherit;
       color:var(--fg); background:var(--bg); border:1px solid var(--line); border-radius:6px; }
+    textarea { resize:vertical; }
+    input:disabled, textarea:disabled { opacity:0.6; }
     button { font:inherit; padding:0.5rem 1.1rem; border-radius:6px; cursor:pointer;
       border:1px solid var(--line); background:var(--bg); color:var(--fg); }
     button.primary { background:var(--accent); border-color:var(--accent); color:var(--bg); }
     button:disabled { opacity:0.45; cursor:not-allowed; }
+    .doc-info { margin-top:0.5rem; display:flex; align-items:center; gap:0.6rem;
+      color:var(--muted); font-size:0.85rem; }
+    .doc-info button { padding:0.15rem 0.55rem; font-size:0.8rem; }
     hr { border:0; border-top:1px solid var(--line); margin:1.5rem 0; }
     #log { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:13px; }
     .ev { padding:0.3rem 0; border-bottom:1px solid var(--line); }
@@ -48,8 +53,15 @@
     </div>
     <div class="row">
       <label for="task">Task</label>
-      <input id="task" placeholder="Add input validation to UserController and cover it with tests."
-             value="Add input validation to UserController so a null or blank email is rejected with HTTP 400. Cover it with a test.">
+      <textarea id="task" rows="4" placeholder="Add input validation to UserController and cover it with tests.">Add input validation to UserController so a null or blank email is rejected with HTTP 400. Cover it with a test.</textarea>
+    </div>
+    <div class="row">
+      <label for="doc">Attach a PRD or task doc instead (.md/.txt, optional — replaces the text above)</label>
+      <input id="doc" type="file" accept=".md,.markdown,.txt">
+      <div id="doc-info" class="doc-info hidden">
+        <span id="doc-name"></span>
+        <button id="doc-remove" type="button">✕ remove</button>
+      </div>
     </div>
     <button id="run" class="primary">Run</button>
   </section>
@@ -128,6 +140,39 @@
 
   $('approve').onclick = () => decide(true);
   $('reject').onclick = () => decide(false);
+
+  const MAX_DOC_BYTES = 100 * 1024;
+  const DOC_EXT_RE = /\.(md|markdown|txt)$/i;
+
+  $('doc').onchange = async () => {
+    const file = $('doc').files[0];
+    $('doc').value = ''; // clears the picker so the same file can be re-selected later
+    if (!file) return;
+
+    if (!DOC_EXT_RE.test(file.name)) {
+      log('error', `"${file.name}" isn't a .md/.markdown/.txt file`);
+      return;
+    }
+    if (file.size === 0) {
+      log('error', `"${file.name}" is empty`);
+      return;
+    }
+    if (file.size > MAX_DOC_BYTES) {
+      log('error', `"${file.name}" is ${(file.size / 1024).toFixed(1)} KB, over the 100 KB limit`);
+      return;
+    }
+
+    $('task').value = await file.text();
+    $('task').disabled = true;
+    $('doc-name').textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+    $('doc-info').classList.remove('hidden');
+  };
+
+  $('doc-remove').onclick = () => {
+    $('task').value = '';
+    $('task').disabled = false;
+    $('doc-info').classList.add('hidden');
+  };
 
   $('run').onclick = async () => {
     const task = $('task').value.trim();
