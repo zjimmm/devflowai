@@ -3,6 +3,8 @@ package ai.devflow.orchestrator;
 import ai.devflow.agent.AgentResult;
 import ai.devflow.agent.Finding;
 import ai.devflow.agent.TokenUsage;
+import ai.devflow.skill.ScribeDraft;
+import ai.devflow.skill.SkillDraft;
 import ai.devflow.workspace.FixtureWorkspace;
 import ai.devflow.workspace.Workspace;
 import org.junit.jupiter.api.*;
@@ -96,5 +98,38 @@ class RunStateTest {
         assertThat(state.phase()).isEqualTo(RunPhase.PREPARING);
         state.setPhase(RunPhase.CODING);
         assertThat(state.phase()).isEqualTo(RunPhase.CODING);
+    }
+
+    @Test
+    void memoryDefaultsToBlankAndCanBeSet() {
+        var state = new RunState("r", "t", workspace);
+        assertThat(state.memory()).isEmpty();
+
+        state.setMemory("tests use JUnit 5");
+        assertThat(state.memory()).isEqualTo("tests use JUnit 5");
+    }
+
+    @Test
+    void allFindingsAccumulatesAcrossClearFindingsCalls() {
+        var state = new RunState("r", "t", workspace);
+
+        state.addFindings(List.of(Finding.fromHuman("first correction")));
+        state.clearFindings(); // simulates the coder having consumed it
+        state.addFindings(List.of(Finding.fromHuman("second correction")));
+
+        assertThat(state.openFindings()).hasSize(1); // only the second is still "open"
+        assertThat(state.allFindings())
+                .as("the Scribe needs everything that ever caused a bounce, not just what's still pending")
+                .hasSize(2);
+    }
+
+    @Test
+    void pendingScribeDraftDefaultsToEmpty() {
+        var state = new RunState("r", "t", workspace);
+        assertThat(state.pendingScribeDraft().isEmpty()).isTrue();
+
+        var draft = new ScribeDraft(new SkillDraft("s", "d", List.of(), "b"), null);
+        state.setPendingScribeDraft(draft);
+        assertThat(state.pendingScribeDraft()).isEqualTo(draft);
     }
 }

@@ -3,6 +3,7 @@ package ai.devflow.orchestrator;
 import ai.devflow.agent.AgentResult;
 import ai.devflow.agent.Finding;
 import ai.devflow.agent.TokenUsage;
+import ai.devflow.skill.ScribeDraft;
 import ai.devflow.tools.GitTools;
 import ai.devflow.workspace.Workspace;
 
@@ -28,11 +29,14 @@ public class RunState {
     private final List<AgentResult> history = new ArrayList<>();
     private final List<Finding> openFindings = new ArrayList<>();
     private final List<String> loadedSkills = new ArrayList<>();
+    private final List<Finding> allFindings = new ArrayList<>();
 
     private int reviewIterations = 0;
     private int humanIterations = 0;
     private TokenUsage totalTokens = TokenUsage.NONE;
     private RunPhase phase = RunPhase.PREPARING;
+    private String memory = "";
+    private ScribeDraft pendingScribeDraft = ScribeDraft.EMPTY;
 
     public RunState(String runId, String task, Workspace workspace) {
         this.runId = runId;
@@ -52,19 +56,29 @@ public class RunState {
     public synchronized List<AgentResult> history() { return List.copyOf(history); }
     public synchronized List<Finding> openFindings() { return List.copyOf(openFindings); }
     public synchronized List<String> loadedSkills() { return List.copyOf(loadedSkills); }
+    public synchronized List<Finding> allFindings() { return List.copyOf(allFindings); }
+    public synchronized String memory() { return memory; }
+    public synchronized ScribeDraft pendingScribeDraft() { return pendingScribeDraft; }
     public synchronized int reviewIterations() { return reviewIterations; }
     public synchronized int humanIterations() { return humanIterations; }
     public synchronized TokenUsage totalTokens() { return totalTokens; }
     public synchronized RunPhase phase() { return phase; }
 
     public synchronized void setPhase(RunPhase phase) { this.phase = phase; }
+    public synchronized void setMemory(String memory) { this.memory = memory == null ? "" : memory; }
+    public synchronized void setPendingScribeDraft(ScribeDraft draft) {
+        this.pendingScribeDraft = draft == null ? ScribeDraft.EMPTY : draft;
+    }
 
     public synchronized void record(AgentResult result) {
         history.add(result);
         totalTokens = totalTokens.plus(result.tokens());
     }
 
-    public synchronized void addFindings(List<Finding> findings) { openFindings.addAll(findings); }
+    public synchronized void addFindings(List<Finding> findings) {
+        openFindings.addAll(findings);
+        allFindings.addAll(findings); // never cleared -- the Scribe's input at the end of the run
+    }
     public synchronized void clearFindings() { openFindings.clear(); }
     public synchronized void addLoadedSkill(String name) { loadedSkills.add(name); }
     public synchronized void incrementReviewIterations() { reviewIterations++; }

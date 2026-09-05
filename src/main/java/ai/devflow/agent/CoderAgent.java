@@ -50,6 +50,12 @@ public class CoderAgent implements Agent {
         StringBuilder sb = new StringBuilder();
         sb.append("Task: ").append(state.task()).append("\n\n");
 
+        if (!state.memory().isBlank()) {
+            sb.append("Known facts about this repository from previous runs:\n")
+              .append(state.memory())
+              .append("\n\n");
+        }
+
         if (!state.loadedSkills().isEmpty()) {
             sb.append("Relevant knowledge from previous runs on this repository:\n")
               .append(String.join("\n\n", state.loadedSkills()))

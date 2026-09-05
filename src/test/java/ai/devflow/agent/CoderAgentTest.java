@@ -93,6 +93,23 @@ class CoderAgentTest {
     }
 
     @Test
+    void memoryIsIncludedInThePromptAsItsOwnSection() throws Exception {
+        ChatClient client = mock(ChatClient.class, RETURNS_DEEP_STUBS);
+        when(client.prompt().user(any(String.class)).tools(any(Object[].class)).call().chatResponse())
+                .thenReturn(responseWith("done", 10, 5));
+
+        var agent = new CoderAgent(client);
+        var state = new RunState("coder-test", "fix it", workspace);
+        state.setMemory("tests use JUnit 5 + AssertJ");
+
+        agent.run(state);
+
+        var promptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(client.prompt(), atLeastOnce()).user(promptCaptor.capture());
+        assertThat(promptCaptor.getValue()).contains("tests use JUnit 5 + AssertJ");
+    }
+
+    @Test
     void reportsRealTokenUsageFromTheResponse() throws Exception {
         ChatClient client = mock(ChatClient.class, RETURNS_DEEP_STUBS);
         when(client.prompt().user(any(String.class)).tools(any(Object[].class)).call().chatResponse())
