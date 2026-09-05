@@ -12,4 +12,9 @@ class ChatClientConfigTest {
         // Guards against silently inheriting Spring AI's stale default.
         assertThat(ModelNames.OPUS).doesNotContain("sonnet-4-2025");
     }
+
+    @Test
+    void sonnetIsPinnedForTheRepeatedPerLoopAgents() {
+        assertThat(ModelNames.SONNET).isEqualTo("claude-sonnet-5");
+    }
 }
