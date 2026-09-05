@@ -28,7 +28,7 @@ class EndToEndLiveTest {
         try {
             var orchestrator = new Orchestrator(
                     new CoderAgent(new SpringAiCodingWorker(coderClient)),
-                    new ReviewerAgent(reviewerClient),
+                    new ReviewerAgent(new SpringAiCodingWorker(reviewerClient)),
                     (task, index) -> java.util.List.of(),
                     (state, findings, reason) -> ai.devflow.skill.ScribeDraft.EMPTY,
                     new ai.devflow.skill.SkillStore() {

@@ -41,9 +41,14 @@ public class OrchestrationConfig {
         return new CoderAgent(coderWorker);
     }
 
+    @Bean @Qualifier("reviewer")
+    CodingWorker reviewerWorker(@Qualifier("reviewer") ChatClient reviewerChatClient) {
+        return new SpringAiCodingWorker(reviewerChatClient);
+    }
+
     @Bean
-    Agent reviewerAgent(@Qualifier("reviewer") ChatClient reviewerChatClient) {
-        return new ReviewerAgent(reviewerChatClient);
+    Agent reviewerAgent(@Qualifier("reviewer") CodingWorker reviewerWorker) {
+        return new ReviewerAgent(reviewerWorker);
     }
 
     @Bean

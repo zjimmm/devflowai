@@ -2,6 +2,7 @@ package ai.devflow.agent;
 
 import ai.devflow.orchestrator.RunState;
 import ai.devflow.workspace.*;
+import ai.devflow.worker.SpringAiCodingWorker;
 import org.junit.jupiter.api.*;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -48,7 +49,7 @@ class ReviewerAgentTest {
                                   "message":"@Valid missing on the controller parameter"}]}
                     """, 10, 5));
 
-        var agent = new ReviewerAgent(client);
+        var agent = new ReviewerAgent(new SpringAiCodingWorker(client));
         var state = new RunState("reviewer-test", "add validation", workspace);
         AgentResult result = agent.run(state);
 
@@ -66,7 +67,7 @@ class ReviewerAgentTest {
                     {"status":"OK","summary":"looks correct","findings":[]}
                     """, 10, 5));
 
-        var agent = new ReviewerAgent(client);
+        var agent = new ReviewerAgent(new SpringAiCodingWorker(client));
         AgentResult result = agent.run(new RunState("r", "t", workspace));
 
         assertThat(result.status()).isEqualTo(AgentResult.Status.OK);
@@ -79,7 +80,7 @@ class ReviewerAgentTest {
         when(client.prompt().user(any(String.class)).tools(any()).call().chatResponse())
                 .thenReturn(responseWith("not json at all", 10, 5));
 
-        var agent = new ReviewerAgent(client);
+        var agent = new ReviewerAgent(new SpringAiCodingWorker(client));
         AgentResult result = agent.run(new RunState("r", "t", workspace));
 
         // A reviewer that cannot be parsed must NOT be read as approval.
@@ -104,7 +105,7 @@ class ReviewerAgentTest {
                     ```
                     """, 10, 5));
 
-        var agent = new ReviewerAgent(client);
+        var agent = new ReviewerAgent(new SpringAiCodingWorker(client));
         AgentResult result = agent.run(new RunState("r", "t", workspace));
 
         assertThat(result.status()).isEqualTo(AgentResult.Status.NEEDS_WORK);
@@ -129,7 +130,7 @@ class ReviewerAgentTest {
                     in the caller, or a NEEDS_WORK example: {"status":"NEEDS_WORK","summary":"bad","findings":[]}
                     """, 10, 5));
 
-        var agent = new ReviewerAgent(client);
+        var agent = new ReviewerAgent(new SpringAiCodingWorker(client));
         AgentResult result = agent.run(new RunState("r", "t", workspace));
 
         assertThat(result.status()).isEqualTo(AgentResult.Status.OK);
@@ -147,7 +148,7 @@ class ReviewerAgentTest {
         when(client.prompt().user(any(String.class)).tools(any()).call().chatResponse())
                 .thenReturn(responseWith("{}", 10, 5));
 
-        var agent = new ReviewerAgent(client);
+        var agent = new ReviewerAgent(new SpringAiCodingWorker(client));
         AgentResult result = agent.run(new RunState("r", "t", workspace));
 
         assertThat(result.status()).isEqualTo(AgentResult.Status.FAILED);
@@ -164,7 +165,7 @@ class ReviewerAgentTest {
                     {"status":"MAYBE","summary":"unsure","findings":[]}
                     """, 10, 5));
 
-        var agent = new ReviewerAgent(client);
+        var agent = new ReviewerAgent(new SpringAiCodingWorker(client));
         AgentResult result = agent.run(new RunState("r", "t", workspace));
 
         assertThat(result.status()).isEqualTo(AgentResult.Status.FAILED);
@@ -179,7 +180,7 @@ class ReviewerAgentTest {
                      "findings":[{"severity":"HIGH","file":"A.java","line":1,"message":"x"}]}
                     """, 500, 60));
 
-        var result = new ReviewerAgent(client).run(new RunState("u", "t", workspace));
+        var result = new ReviewerAgent(new SpringAiCodingWorker(client)).run(new RunState("u", "t", workspace));
 
         assertThat(result.tokens()).isEqualTo(new TokenUsage(500, 60));
     }

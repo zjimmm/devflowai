@@ -2,10 +2,11 @@ package ai.devflow.agent;
 
 import ai.devflow.orchestrator.RunState;
 import ai.devflow.tools.ReadOnlyFileTools;
+import ai.devflow.worker.CodingWorker;
+import ai.devflow.worker.WorkerRequest;
+import ai.devflow.worker.WorkerResult;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.model.ChatResponse;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -14,9 +15,9 @@ public class ReviewerAgent implements Agent {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    private final ChatClient chatClient;
+    private final CodingWorker worker;
 
-    public ReviewerAgent(ChatClient chatClient) { this.chatClient = chatClient; }
+    public ReviewerAgent(CodingWorker worker) { this.worker = worker; }
 
     @Override public String name() { return "reviewer"; }
 
@@ -39,23 +40,10 @@ public class ReviewerAgent implements Agent {
              "findings":[{"severity":"LOW"|"MEDIUM"|"HIGH","file":"...","line":0,"message":"..."}]}
             """.formatted(state.task(), changed);
 
-        ChatResponse response = chatClient.prompt()
-                .user(prompt)
-                .tools(new ReadOnlyFileTools(state.workspace().guard()))
-                .call()
-                .chatResponse();
+        List<Object> tools = List.of(new ReadOnlyFileTools(state.workspace().guard()));
+        WorkerResult result = worker.run(new WorkerRequest(prompt, tools));
 
-        return parse(textOf(response), UsageMapper.from(response));
-    }
-
-    /** Response text, tolerating a null or empty response rather than throwing. */
-    private static String textOf(ChatResponse response) {
-        if (response == null || response.getResult() == null
-                || response.getResult().getOutput() == null) {
-            return "";
-        }
-        String text = response.getResult().getOutput().getText();
-        return text == null ? "" : text;
+        return parse(result.text(), result.tokens());
     }
 
     private AgentResult parse(String raw, TokenUsage usage) {
