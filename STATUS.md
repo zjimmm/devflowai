@@ -1,7 +1,7 @@
 # devflowai — Status
 
-**Last updated:** 2026-08-30
-**Branch:** `main` — 45 commits, all merged, `./gradlew clean test`: 96 tests, 0 failures
+**Last updated:** 2026-09-05
+**Branch:** `main` — 60 commits, all merged, `./gradlew clean test`: 137 tests, 0 failures
 **Spec:** `docs/superpowers/specs/2026-08-27-devflowai-design.md`
 
 ---
@@ -22,13 +22,13 @@ unverified](#whats-actually-unverified).
 |---|---|---|---|
 | [Phases 0–3](docs/superpowers/plans/2026-08-27-devflowai-phases-0-3.md) | 15 | 1 (4 commits) | ✅ Merged |
 | [Phase 4](docs/superpowers/plans/2026-08-29-devflowai-phase-4.md) | 10 | 1 (3 commits) | ✅ Merged |
+| [Phase 5](docs/superpowers/plans/2026-09-05-devflowai-phase-5.md) | 10 | 1 (1 commit) | ✅ Merged |
 
-Both plans were executed subagent-driven: a fresh implementer per task, an
+All three plans were executed subagent-driven: a fresh implementer per task, an
 independent reviewer per task (never the implementer grading its own work), a
 fix loop for anything the reviewer flagged, and one broad whole-branch review
-at the end of each plan. The ledgers for both are gone (deleted per process
-once each plan's final review went clean) — the git history below is now the
-record.
+at the end of each plan. The ledgers are gone (deleted per process once each
+plan's final review went clean) — the git history below is now the record.
 
 ---
 
@@ -106,7 +106,10 @@ was corrected in Task 10.
 - A **silent failure mode**: if a run failed before the browser's SSE
   connection finished setting up, the failure event was dropped and the run
   vanished from the registry — the operator would see the Run button
-  re-enable with zero explanation. Partially fixed (see below).
+  re-enable with zero explanation. Fixed in a later commit (N2) by giving
+  `RunEventPublisher` a bounded per-run event history that replays to a
+  newly-subscribing emitter — this was originally logged as only partially
+  fixed in this file, which was itself stale; corrected 2026-09-05.
 - Per-run **token cost was computed but never shown** — Task 2 built it
   specifically so Phase 4 could display it, but the piece connecting the two
   fell through the gap between two different tasks' briefs. Now rendered.
@@ -116,6 +119,75 @@ was corrected in Task 10.
   fixed with Spring's `@TestBean` mechanism instead, verified by an
   independent reviewer who reproduced both the original bug and my incorrect
   fix byte-for-byte to confirm the diagnosis.
+
+---
+
+## Phase 5 — skills and memory
+
+**Goal:** the differentiating idea from the original concept — the system
+learns from reviewer bounces and human corrections, writing what it learned
+as markdown committed alongside the code, and reads it back in on later runs
+against the same repo.
+
+| Task | What it built |
+|---|---|
+| 1–3 | Skill data model (`SkillDraft`/`ScribeDraft`/`SkillIndexEntry`) and the hand-rolled frontmatter file format; `SkillStore`/`FileSkillStore` and `MemoryStore`/`FileMemoryStore` — host-side persistence, outside any workspace, keyed by repo |
+| 4–6 | `RunState` gains `memory()` and a running findings history separate from what's cleared each coder turn; `SkillPickerAgent` (reuses the Haiku `router` bean that had sat unused since Phase 0–3); tool-free `ScribeAgent` |
+| 7–8 | `Orchestrator` wiring: memory/skills loaded before Gate 1; the write-trigger condition; Gate 3 rebuilt with its own approve/reject-with-reason/reject-without-reason semantics (spec §5.2) |
+| 9–10 | Operator page shows the loaded skills and the Gate 3 draft; the full-stack "Learning test" (spec §12) proving a corrected run writes a skill into the host-side store |
+
+**A spec/implementation gap found during planning, not during review:** the
+spec's write trigger is literally `reviewIterations >= 2`. Tracing the actual
+Phase 4 code showed this can't be right on its own — `decrementReviewIteration`
+(added in Phase 4 specifically so a human correction doesn't consume the
+reviewer's separate cap) rolls that counter back on every human correction, so
+a run corrected *only* by a human, with the reviewer approving immediately
+each time, can finish with `reviewIterations` stuck at 1 forever. Fixed by
+using `reviewIterations >= 2 || humanIterations >= 1`, with a regression test
+for exactly this case.
+
+**Real bugs found and fixed:**
+
+- **The most serious one, caught only by the final whole-branch review:**
+  `FileSkillStore.write()` saves a skill by a sanitized slug
+  (`add-validation.md`), but `readFull()` was resolving the file by the *raw*
+  name it was given — which, coming back out of a file's frontmatter, is
+  whatever human-readable name the Scribe originally chose (`"Add
+  Validation"`). Every per-task review missed this because every task's own
+  tests happened to use names that were already kebab-case. Net effect: a
+  skill would be written, appear in the index, get picked by the
+  `SkillPicker` — and then silently fail to ever reach the coder's prompt, no
+  error anywhere. Fixed by having `readFull` resolve through the same slug
+  rule `write` uses. The same unslugged lookup was also an unvalidated path
+  read; the fix closes both at once, and a test now writes a
+  non-kebab-case-named skill and reads it back by its raw name.
+- Alongside that fix: the `SkillPicker`'s output is now filtered against the
+  actual skill index before any file lookup happens (defense in depth — an
+  earlier review had judged the missing filter non-load-bearing on the
+  assumption that an unknown name always resolves to nothing; the bug above
+  showed that assumption was only half true), and both host-side stores
+  (`FileSkillStore`, `FileMemoryStore`) are now `synchronized` — a
+  confirmed-reachable race once concurrent runs share a singleton store keyed
+  by the same `repoSlug`.
+- A **misleading operator-facing message**: committing after a bare
+  (reasonless) Gate‑3 rejection — which spec §5.2 says should commit the
+  validated code and discard only the draft — reported the same
+  `"Approved by reviewer and operator"` text as a normal approval, with no
+  indication the operator had actually declined something.
+
+**Design calls made explicitly, not left implicit:** no general multi-agent
+router was built (the spec's "Router" box was never implemented in Phases
+0–4 either — only coder→reviewer exists, so there is nothing yet for a router
+to route between); the `SkillPicker` reuses the router's Haiku bean scoped
+narrowly to skill selection. `repoSlug` is hardcoded to `"fixture"` — Phase 6
+will need a real derivation from a repo URL. "Merges into an existing skill
+by name" (spec §6.3) is implemented as whole-file overwrite by slug, not
+content-level merging.
+
+**Also shipped alongside this phase, outside its plan:** the operator page can
+now attach a `.md`/`.txt` file instead of typing the task by hand — read
+client-side, no backend change, so the documented three-endpoint contract is
+untouched.
 
 ---
 
@@ -153,23 +225,23 @@ judged non-blocking or explicitly deferred to a later phase.
 | Gap | Why it's not fixed yet |
 |---|---|
 | The bundled fixture has no `gradlew`/`mvnw` | Every real run's Gate 2 will show "Build failed: no wrapper found." Deliberate in Phase 0–3 (it's what lets `BuildToolsTest` test the missing-wrapper path) — but Phase 4's web page is the first thing to make this visible to an operator. |
-| `GitTools.commit()`'s `git add .` is unconditional | Currently harmless (the fixture has no wrapper, so no build artifacts exist to accidentally stage) — but will corrupt the Gate 3 file list the moment a real build wrapper exists. **Must be fixed before Phase 6** (`ClonedWorkspace` will point at real repos, which typically do have wrappers). |
-| A run failing before any SSE client connects still results in a silent 404 | The Phase 4 final-review fix closed the *common* case (a client subscribing slightly late to a still-running execution) but not this rarer one. Cheapest fix not yet done: one line in `index.html` so a lost connection logs something instead of silently re-enabling the Run button. |
+| `GitTools.commit()`'s `git add .` is unconditional | **Re-checked 2026-09-05, finding corrected:** empirically verified (`GitToolsTest.gitignoredBuildOutputNeverReachesStatusChangedFilesOrCommit`) that JGit's `add`/`status` already honor a repo's own `.gitignore` — a gitignored `build/` directory never reaches `changedFiles()`, `status()`, or a commit. The risk this row originally described (any real wrapper corrupting the Gate 3 file list) does not hold for a repo with normal `.gitignore` hygiene, which is nearly all of them. Residual, narrower risk: a target repo whose `.gitignore` is missing or incomplete for its own build tool. Separately, Phase 5 now *depends on* this same unconditional `git add .` to stage `.devflowai/skills/*.md` and `.devflowai/memory.md` — so if a real repo's own `.gitignore` happens to exclude `.devflowai/` (e.g. an overly broad dot-directory pattern), the learning loop's commit would silently no-op instead. Neither direction is fixed yet; no longer a hard blocker for Phase 6, but worth a real test against an actual cloned repo before relying on either assumption. |
 | `index.html`'s `showGate()` ignores whether the build passed | Minor — the preceding "Build passed/failed" step line is already visible just above the gate box. |
 | Server binds `0.0.0.0` with no authentication | Acceptable for the design's stated scope (single-user, local, non-hardened tool per spec §11) — do not expose this port to an untrusted network. |
 | `devflowai.fixture.path` points into `src/test/resources`, not packaged into a boot jar | Fine for `./gradlew bootRun` from source (the documented way to run it); would break if ever containerized. Relevant if/when a Docker image gets built. |
 
 ---
 
-## What's left — Phases 5–7
+## What's left — Phases 6–7
 
 Sketched in the original spec, not planned in task-by-task detail yet:
 
-- **Phase 5 — skills and memory.** The differentiating idea from the original
-  concept: the system learns from reviewer bounces and stops repeating
-  mistakes, written as markdown committed alongside the code. Nothing built.
 - **Phase 6 — `ClonedWorkspace`.** Point devflowai at a real git URL instead
-  of only the bundled fixture. Blocked on the `git add .` fix above.
+  of only the bundled fixture. No longer hard-blocked on the `git add .` fix
+  (see that row's correction above), but that row's residual risk in both
+  directions is worth resolving against a real cloned repo as part of this
+  phase, not assumed away. Also needs a real `repoSlug` derivation from the
+  repo URL — Phase 5 hardcoded it to `"fixture"`.
 - **Phase 7 — the rest of the crew.** Planner, test-writer, doc-writer agents,
   plus a routing evaluation harness.
 

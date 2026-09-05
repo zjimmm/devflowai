@@ -45,6 +45,26 @@ class GitToolsTest {
         assertThat(git.status()).containsIgnoringCase("clean");
     }
 
+    // Empirically verifies JGit's add/status honor a repo's own .gitignore
+    // for build.commit()'s unconditional `git add .` -- the fixture itself
+    // has no .gitignore (it's not a real target repo), so this is the only
+    // place that behavior gets exercised. See STATUS.md's corrected note:
+    // a well-behaved real repo's own .gitignore already keeps build output
+    // out of the changed-files list without any special-casing here.
+    @Test
+    void gitignoredBuildOutputNeverReachesStatusChangedFilesOrCommit() throws Exception {
+        Files.writeString(workspace.root().resolve(".gitignore"), "build/\n");
+        git.commit("add gitignore");
+
+        Path buildDir = workspace.root().resolve("build");
+        Files.createDirectories(buildDir);
+        Files.writeString(buildDir.resolve("output.class"), "fake bytecode");
+
+        assertThat(git.status()).containsIgnoringCase("clean");
+        assertThat(git.changedFiles()).isEmpty();
+        assertThat(git.commit("after build")).containsIgnoringCase("committed");
+    }
+
     @Test
     void statusAndChangedFilesIncludeUnstagedDeletions() throws Exception {
         // Delete a tracked file without staging the deletion
