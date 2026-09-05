@@ -46,8 +46,9 @@ strict scheme allowlist before any git operation, not treated as a trusted URL.
   `claude-sonnet-4-20250514` as earlier assumed from doc research — applied
   via a real null-coalescing fallback in `AnthropicChatOptions`'s constructor
   when no model is set. Router/scribe use `claude-haiku-4-5`; coder/reviewer
-  use `claude-opus-5` — always set explicitly in `ChatClientConfig`
-  (Task 11); never depend on the default either way.
+  use `claude-sonnet-5` at `XHIGH` effort; planner uses `claude-opus-5` at
+  `XHIGH` effort — always set explicitly in `ChatClientConfig` (Task 11);
+  never depend on the default either way.
 - **Never call `.temperature(...)` explicitly.** Opus 5 rejects an explicit
   sampling parameter with HTTP 400. Static and runtime evidence (Task 3,
   independently reproduced by review) traced the full chain —

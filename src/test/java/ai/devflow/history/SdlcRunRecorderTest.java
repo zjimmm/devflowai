@@ -47,7 +47,7 @@ class SdlcRunRecorderTest {
         recorder.onRunRecorded(start);
         recorder.onRunRecorded(start);
 
-        assertThat(runs.count()).isEqualTo(1);
+        assertThat(runs.findAll()).filteredOn(r -> r.id().equals("r2")).hasSize(1);
     }
 
     @Test

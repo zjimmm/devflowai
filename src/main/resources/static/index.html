@@ -238,8 +238,21 @@
     rows.forEach(r => {
       const tr = document.createElement('tr');
       tr.style.borderTop = '1px solid var(--line)';
+
       const task = r.task.length > 60 ? r.task.slice(0, 60) + '…' : r.task;
-      tr.innerHTML = `<td style="padding:0.3rem 0;">${task}</td><td>${r.status}</td><td>${new Date(r.startedAt).toLocaleString()}</td>`;
+      const taskCell = document.createElement('td');
+      taskCell.style.padding = '0.3rem 0';
+      taskCell.textContent = task;
+
+      const statusCell = document.createElement('td');
+      statusCell.textContent = r.status;
+
+      const startedCell = document.createElement('td');
+      startedCell.textContent = new Date(r.startedAt).toLocaleString();
+
+      tr.appendChild(taskCell);
+      tr.appendChild(statusCell);
+      tr.appendChild(startedCell);
       body.appendChild(tr);
     });
   }
