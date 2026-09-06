@@ -64,6 +64,13 @@
         <button id="doc-remove" type="button">✕ remove</button>
       </div>
     </div>
+    <div class="row">
+      <label for="strategy">Strategy</label>
+      <select id="strategy">
+        <option value="orchestrated">Orchestrated (planner, reviewer, gates)</option>
+        <option value="direct">Direct (single coder pass, no review)</option>
+      </select>
+    </div>
     <button id="run" class="primary">Run</button>
   </section>
 
@@ -93,7 +100,9 @@
       <thead>
         <tr style="text-align:left; color:var(--muted);">
           <th style="padding:0.3rem 0;">Task</th>
+          <th>Strategy</th>
           <th>Status</th>
+          <th>Build</th>
           <th>Started</th>
         </tr>
       </thead>
@@ -208,7 +217,7 @@
     const res = await fetch('/api/runs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ task, repo })
+      body: JSON.stringify({ task, repo, strategy: $('strategy').value })
     });
     if (!res.ok) {
       log('error', `Could not start the run (HTTP ${res.status})`);
@@ -244,14 +253,22 @@
       taskCell.style.padding = '0.3rem 0';
       taskCell.textContent = task;
 
+      const strategyCell = document.createElement('td');
+      strategyCell.textContent = r.strategy || '';
+
       const statusCell = document.createElement('td');
       statusCell.textContent = r.status;
+
+      const buildCell = document.createElement('td');
+      buildCell.textContent = r.buildSucceeded === true ? 'passed' : r.buildSucceeded === false ? 'failed' : '';
 
       const startedCell = document.createElement('td');
       startedCell.textContent = new Date(r.startedAt).toLocaleString();
 
       tr.appendChild(taskCell);
+      tr.appendChild(strategyCell);
       tr.appendChild(statusCell);
+      tr.appendChild(buildCell);
       tr.appendChild(startedCell);
       body.appendChild(tr);
     });
