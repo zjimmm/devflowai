@@ -6,4 +6,4 @@ package ai.devflow.policy;
  * counts) without another signature change across every caller — the same
  * reasoning that shaped {@code WorkerRequest} in Sub-project 1.
  */
-public record PolicyContext(boolean buildPassed) {}
+public record PolicyContext(boolean buildPassed, boolean buildRan) {}

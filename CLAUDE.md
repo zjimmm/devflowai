@@ -26,7 +26,9 @@ No gradle.properties setting can substitute for this.
 
 Then open http://localhost:8080. Type a task, click Run, approve at each of the
 three gates. A rejection with a reason sends the work back to the coder instead
-of ending the run.
+of ending the run. A failed build does too, automatically — the platform's
+first enforced policy check (`devflowai.policy.require-build-pass`, default
+`true`) sends it back without waiting for a human decision.
 
 Endpoints (the page uses these three and nothing else):
 

@@ -11,7 +11,7 @@ public class ConfigurablePolicyEngine implements PolicyEngine {
 
     @Override
     public PolicyResult evaluate(PolicyContext context) {
-        if (requireBuildPass && !context.buildPassed()) {
+        if (requireBuildPass && context.buildRan() && !context.buildPassed()) {
             return new PolicyResult(false, "the build did not pass");
         }
         return PolicyResult.ok();

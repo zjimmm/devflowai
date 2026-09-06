@@ -611,4 +611,22 @@ class OrchestratorTest {
         assertThat(state.reviewIterations()).isEqualTo(2);
         assertThat(policyCalls.get()).isEqualTo(2);
     }
+
+    @Test
+    void policyFailingEveryIterationExhaustsTheCapWithoutApproval() throws Exception {
+        var coder = writingCoder("attempt");
+        var reviewer = new ScriptedAgent("reviewer",
+                List.of(AgentResult.ok("reviewer", "looks good", List.of(), TokenUsage.NONE)));
+        policyEngine = context -> new PolicyResult(false, "the build did not pass");
+        var state = new RunState("g25", "t", workspace);
+        var gate = new ApprovalGate(Duration.ofSeconds(10));
+
+        var outcome = runApprovingAll(orchestrator(coder, reviewer), state, gate);
+
+        assertThat(outcome.approved()).isFalse();
+        assertThat(coder.calls).isEqualTo(3);
+        assertThat(outcome.reason())
+                .as("a policy-driven cap-out must say so, not blame the review loop generically")
+                .contains("policy");
+    }
 }

@@ -120,10 +120,12 @@ public class Orchestrator {
         emit(state, "step", "Planner — plan ready", Map.of("plan", planned.summary()));
 
         AgentResult lastReview = null;
+        String lastPolicyFailureReason = null;
 
         reviewLoop:
         while (state.reviewIterations() < maxReviewIterations) {
             state.incrementReviewIterations();
+            lastPolicyFailureReason = null;
 
             // ---- Coder ----------------------------------------------------
             state.setPhase(RunPhase.CODING);
@@ -189,10 +191,12 @@ public class Orchestrator {
             emit(state, "step", build.success() ? "Build passed" : "Build failed",
                     Map.of("success", build.success()));
 
-            PolicyResult policyResult = policyEngine.evaluate(new PolicyContext(build.success()));
+            PolicyResult policyResult = policyEngine.evaluate(new PolicyContext(build.success(), build.wrapperFound()));
             if (!policyResult.passed()) {
-                state.addFindings(List.of(Finding.fromPolicy(policyResult.reason())));
+                String findingMessage = policyResult.reason() + "\n\nBuild output:\n" + build.output();
+                state.addFindings(List.of(Finding.fromPolicy(findingMessage)));
                 emit(state, "step", "Policy check failed: " + policyResult.reason(), Map.of());
+                lastPolicyFailureReason = policyResult.reason();
                 continue;
             }
 
@@ -274,9 +278,11 @@ public class Orchestrator {
             return new RunOutcome(true, outcomeReason, state);
         }
 
-        String reason = lastReview == null
-                ? "Review loop ended without a review"
-                : "Review loop hit the cap of " + maxReviewIterations + " iterations";
+        String reason = lastPolicyFailureReason != null
+                ? "Review loop hit the cap of " + maxReviewIterations + " iterations (last blocked by policy: " + lastPolicyFailureReason + ")"
+                : lastReview == null
+                        ? "Review loop ended without a review"
+                        : "Review loop hit the cap of " + maxReviewIterations + " iterations";
         return failed(state, reason);
     }
 

@@ -21,7 +21,7 @@ import java.util.concurrent.TimeUnit;
  */
 public class BuildTools {
 
-    public record BuildResult(boolean success, String output) {}
+    public record BuildResult(boolean success, String output, boolean wrapperFound) {}
 
     private static final int MAX_OUTPUT_CHARS = 4_000;
 
@@ -43,7 +43,7 @@ public class BuildTools {
         Path root = workspace.root();
         String wrapper = resolveWrapper(root);
         if (wrapper == null) {
-            return new BuildResult(false, "No build wrapper found (looked for gradlew and mvnw).");
+            return new BuildResult(false, "No build wrapper found (looked for gradlew and mvnw).", false);
         }
 
         Process p;
@@ -53,7 +53,7 @@ public class BuildTools {
                     .redirectErrorStream(true)
                     .start();
         } catch (IOException e) {
-            return new BuildResult(false, "Build could not run: " + e.getMessage());
+            return new BuildResult(false, "Build could not run: " + e.getMessage(), true);
         }
 
         // Drain stdout on a background thread concurrently with waitFor(),
@@ -81,7 +81,7 @@ public class BuildTools {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             p.destroyForcibly();
-            return new BuildResult(false, "Build was interrupted: " + e.getMessage());
+            return new BuildResult(false, "Build was interrupted: " + e.getMessage(), true);
         }
 
         if (!finished) {
@@ -92,9 +92,9 @@ public class BuildTools {
         String output = truncate(drain.output(), MAX_OUTPUT_CHARS);
 
         if (!finished) {
-            return new BuildResult(false, "Build timed out after " + timeout.toMinutes() + " minutes.\n" + output);
+            return new BuildResult(false, "Build timed out after " + timeout.toMinutes() + " minutes.\n" + output, true);
         }
-        return new BuildResult(p.exitValue() == 0, output);
+        return new BuildResult(p.exitValue() == 0, output, true);
     }
 
     private void waitQuietly(Process p) {

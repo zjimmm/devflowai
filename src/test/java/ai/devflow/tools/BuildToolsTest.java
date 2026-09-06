@@ -35,6 +35,7 @@ class BuildToolsTest {
 
         assertThat(result.success()).isFalse();
         assertThat(result.output()).contains("No build wrapper found");
+        assertThat(result.wrapperFound()).isFalse();
     }
 
     @Test
@@ -63,6 +64,7 @@ class BuildToolsTest {
 
         assertThat(result.success()).isTrue();
         assertThat(result.output()).contains("hello-from-fake-gradlew");
+        assertThat(result.wrapperFound()).isTrue();
     }
 
     @Test
