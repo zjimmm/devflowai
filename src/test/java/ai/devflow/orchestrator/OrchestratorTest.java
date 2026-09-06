@@ -3,6 +3,7 @@ package ai.devflow.orchestrator;
 import ai.devflow.agent.*;
 import ai.devflow.event.RunEventPublisher;
 import ai.devflow.memory.MemoryStore;
+import ai.devflow.policy.*;
 import ai.devflow.skill.*;
 import ai.devflow.workspace.*;
 import org.junit.jupiter.api.*;
@@ -25,6 +26,7 @@ class OrchestratorTest {
     RunEventPublisher events;
     ExecutorService pool;
     Agent planner = defaultPlanner();
+    PolicyEngine policyEngine = defaultPolicyEngine();
 
     @BeforeEach
     void setUp() throws Exception {
@@ -61,6 +63,10 @@ class OrchestratorTest {
                 return AgentResult.ok("planner", "plan", List.of(), TokenUsage.NONE);
             }
         };
+    }
+
+    static PolicyEngine defaultPolicyEngine() {
+        return context -> PolicyResult.ok();
     }
 
     /** Throws on every call — stands in for a 429 or a dropped connection. */
@@ -121,7 +127,7 @@ class OrchestratorTest {
     private Orchestrator orchestrator(Agent coder, Agent reviewer, SkillPicker picker, Scribe scribe,
                                       SkillStore skillStore, MemoryStore memoryStore) {
         return new Orchestrator(coder, reviewer, planner, picker, scribe, skillStore, memoryStore,
-                events, 3, 5, Duration.ofMinutes(1));
+                events, 3, 5, Duration.ofMinutes(1), policyEngine);
     }
 
     /** Writes a real file so changedFiles() is non-empty, as a real coder would. */
@@ -581,5 +587,28 @@ class OrchestratorTest {
 
         assertThat(f.get(10, TimeUnit.SECONDS).approved()).isFalse();
         assertThat(plannerCalls.get()).isZero();
+    }
+
+    @Test
+    void aFailingPolicyCheckSendsItBackToTheCoderThenRecovers() throws Exception {
+        var coder = writingCoder("attempt");
+        var reviewer = new ScriptedAgent("reviewer",
+                List.of(AgentResult.ok("reviewer", "looks good", List.of(), TokenUsage.NONE)));
+        var policyCalls = new AtomicInteger(0);
+        policyEngine = context -> {
+            int n = policyCalls.incrementAndGet();
+            return n == 1 ? new PolicyResult(false, "the build did not pass") : PolicyResult.ok();
+        };
+        var state = new RunState("g24", "t", workspace);
+        var gate = new ApprovalGate(Duration.ofSeconds(10));
+
+        var outcome = runApprovingAll(orchestrator(coder, reviewer), state, gate);
+
+        assertThat(outcome.approved()).isTrue();
+        assertThat(coder.calls)
+                .as("a failed policy check must send the run back to the coder")
+                .isEqualTo(2);
+        assertThat(state.reviewIterations()).isEqualTo(2);
+        assertThat(policyCalls.get()).isEqualTo(2);
     }
 }

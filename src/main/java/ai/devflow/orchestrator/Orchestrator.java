@@ -8,6 +8,9 @@ import ai.devflow.agent.SkillPicker;
 import ai.devflow.event.RunEvent;
 import ai.devflow.event.RunEventPublisher;
 import ai.devflow.memory.MemoryStore;
+import ai.devflow.policy.PolicyContext;
+import ai.devflow.policy.PolicyEngine;
+import ai.devflow.policy.PolicyResult;
 import ai.devflow.skill.ScribeDraft;
 import ai.devflow.skill.SkillIndexEntry;
 import ai.devflow.skill.SkillStore;
@@ -43,11 +46,12 @@ public class Orchestrator {
     private final int maxReviewIterations;
     private final int maxHumanIterations;
     private final Duration buildTimeout;
+    private final PolicyEngine policyEngine;
 
     public Orchestrator(Agent coder, Agent reviewer, Agent planner, SkillPicker skillPicker, Scribe scribe,
                         SkillStore skillStore, MemoryStore memoryStore,
                         RunEventPublisher events, int maxReviewIterations, int maxHumanIterations,
-                        Duration buildTimeout) {
+                        Duration buildTimeout, PolicyEngine policyEngine) {
         this.coder = coder;
         this.reviewer = reviewer;
         this.planner = planner;
@@ -59,6 +63,7 @@ public class Orchestrator {
         this.maxReviewIterations = maxReviewIterations;
         this.maxHumanIterations = maxHumanIterations;
         this.buildTimeout = buildTimeout;
+        this.policyEngine = policyEngine;
     }
 
     public RunOutcome run(RunState state, ApprovalGate gate) {
@@ -183,6 +188,13 @@ public class Orchestrator {
             var build = new BuildTools(state.workspace(), buildTimeout).build("test");
             emit(state, "step", build.success() ? "Build passed" : "Build failed",
                     Map.of("success", build.success()));
+
+            PolicyResult policyResult = policyEngine.evaluate(new PolicyContext(build.success()));
+            if (!policyResult.passed()) {
+                state.addFindings(List.of(Finding.fromPolicy(policyResult.reason())));
+                emit(state, "step", "Policy check failed: " + policyResult.reason(), Map.of());
+                continue;
+            }
 
             // ---- Gate 3: before the commit --------------------------------
             // C1-b: a run that changed nothing must never be reported approved.

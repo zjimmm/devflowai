@@ -6,6 +6,8 @@ import ai.devflow.memory.FileMemoryStore;
 import ai.devflow.memory.MemoryStore;
 import ai.devflow.orchestrator.Orchestrator;
 import ai.devflow.orchestrator.RunRegistry;
+import ai.devflow.policy.ConfigurablePolicyEngine;
+import ai.devflow.policy.PolicyEngine;
 import ai.devflow.skill.FileSkillStore;
 import ai.devflow.skill.SkillStore;
 import ai.devflow.worker.CodingWorker;
@@ -71,6 +73,11 @@ public class OrchestrationConfig {
         return new ScribeAgent(scribeChatClient);
     }
 
+    @Bean
+    PolicyEngine policyEngine(@Value("${devflowai.policy.require-build-pass:true}") boolean requireBuildPass) {
+        return new ConfigurablePolicyEngine(requireBuildPass);
+    }
+
     /** Host-side, keyed by repo (spec §6.4) -- fixed for the bundled fixture; Phase 6's ClonedWorkspace will need a slug derived from the repo URL. */
     @Bean
     SkillStore skillStore() {
@@ -97,9 +104,10 @@ public class OrchestrationConfig {
                               SkillStore skillStore, MemoryStore memoryStore, RunEventPublisher events,
                               @Value("${devflowai.review.max-iterations:3}") int maxReviewIterations,
                               @Value("${devflowai.review.max-human-iterations:5}") int maxHumanIterations,
-                              @Value("${devflowai.build.timeout-minutes:5}") long buildTimeoutMinutes) {
+                              @Value("${devflowai.build.timeout-minutes:5}") long buildTimeoutMinutes,
+                              PolicyEngine policyEngine) {
         return new Orchestrator(coderAgent, reviewerAgent, plannerAgent, skillPicker, scribe, skillStore, memoryStore,
-                events, maxReviewIterations, maxHumanIterations, Duration.ofMinutes(buildTimeoutMinutes));
+                events, maxReviewIterations, maxHumanIterations, Duration.ofMinutes(buildTimeoutMinutes), policyEngine);
     }
 
     @Bean

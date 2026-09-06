@@ -24,3 +24,5 @@ devflowai:
     path: src/test/resources/fixture
   clone:
     timeout-minutes: 2
+  policy:
+    require-build-pass: true

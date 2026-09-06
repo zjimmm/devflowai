@@ -3,6 +3,7 @@ package ai.devflow.orchestrator;
 import ai.devflow.agent.*;
 import ai.devflow.event.RunEventPublisher;
 import ai.devflow.memory.MemoryStore;
+import ai.devflow.policy.PolicyResult;
 import ai.devflow.skill.ScribeDraft;
 import ai.devflow.skill.SkillDraft;
 import ai.devflow.skill.SkillIndexEntry;
@@ -47,7 +48,7 @@ class RunRegistryTest {
         var orchestrator = new Orchestrator(new StubAgent("coder"), new StubAgent("reviewer"), new StubAgent("planner"),
                 (task, index) -> List.of(), (state, findings, reason) -> ScribeDraft.EMPTY,
                 new NoOpSkillStore(), new NoOpMemoryStore(),
-                events, 3, 5, Duration.ofMinutes(1));
+                events, 3, 5, Duration.ofMinutes(1), context -> PolicyResult.ok());
         registry = new RunRegistry(orchestrator, events, Executors.newCachedThreadPool(),
                 java.nio.file.Path.of("src/test/resources/fixture"), Duration.ofSeconds(2),
                 Duration.ofSeconds(2));

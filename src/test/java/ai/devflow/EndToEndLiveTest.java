@@ -43,7 +43,8 @@ class EndToEndLiveTest {
                         @Override public String append(String repoSlug, String fact) { return ""; }
                     },
                     new ai.devflow.event.RunEventPublisher(),
-                    3, 5, java.time.Duration.ofMinutes(5));
+                    3, 5, java.time.Duration.ofMinutes(5),
+                    ctx -> ai.devflow.policy.PolicyResult.ok());
 
             var state = new RunState("e2e", "Add input validation to UserController so a null or "
                     + "blank email is rejected with HTTP 400. Cover it with a test.", ws);
