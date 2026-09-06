@@ -5,6 +5,7 @@ import ai.devflow.event.ApprovalRecorded;
 import ai.devflow.event.RunRecorded;
 import ai.devflow.orchestrator.Gate;
 import ai.devflow.orchestrator.RunPhase;
+import ai.devflow.orchestrator.RunStrategy;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
@@ -48,6 +49,7 @@ public class SdlcRunRecorder {
             maybeCreateRun(runId, data);
             maybeRecordStage(runId, data);
             maybeRecordFindings(runId, data);
+            maybeRecordBuildResult(runId, data);
             maybeFinishRun(runId, recorded.event().type(), recorded.event().message(), data);
         } catch (RuntimeException e) {
             System.err.println("SdlcRunRecorder failed to record an event for run " + recorded.runId() + ": " + e);
@@ -71,9 +73,18 @@ public class SdlcRunRecorder {
     private void maybeCreateRun(String runId, Map<String, Object> data) {
         if (data.get("task") instanceof String task
                 && data.get("repoSlug") instanceof String repoSlug
+                && data.get("strategy") instanceof String strategyName
                 && runs.findById(runId).isEmpty()) {
-            runs.save(new SdlcRun(runId, task, repoSlug, Instant.now()));
+            runs.save(new SdlcRun(runId, task, repoSlug, RunStrategy.valueOf(strategyName), Instant.now()));
         }
+    }
+
+    private void maybeRecordBuildResult(String runId, Map<String, Object> data) {
+        if (!(data.get("success") instanceof Boolean succeeded)) return;
+        runs.findById(runId).ifPresent(run -> {
+            run.recordBuildResult(succeeded);
+            runs.save(run);
+        });
     }
 
     private void maybeRecordStage(String runId, Map<String, Object> data) {

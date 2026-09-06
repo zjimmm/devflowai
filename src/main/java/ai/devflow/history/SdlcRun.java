@@ -1,5 +1,6 @@
 package ai.devflow.history;
 
+import ai.devflow.orchestrator.RunStrategy;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -24,6 +25,10 @@ public class SdlcRun {
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
+    private RunStrategy strategy;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
     private SdlcRunStatus status;
 
     @Column(length = 2_000)
@@ -37,12 +42,15 @@ public class SdlcRun {
     private long inputTokens;
     private long outputTokens;
 
+    private Boolean buildSucceeded;
+
     protected SdlcRun() {} // JPA
 
-    public SdlcRun(String id, String task, String repoSlug, Instant startedAt) {
+    public SdlcRun(String id, String task, String repoSlug, RunStrategy strategy, Instant startedAt) {
         this.id = id;
         this.task = task;
         this.repoSlug = repoSlug;
+        this.strategy = strategy;
         this.status = SdlcRunStatus.RUNNING;
         this.startedAt = startedAt;
     }
@@ -50,12 +58,14 @@ public class SdlcRun {
     public String id() { return id; }
     public String task() { return task; }
     public String repoSlug() { return repoSlug; }
+    public RunStrategy strategy() { return strategy; }
     public SdlcRunStatus status() { return status; }
     public String reason() { return reason; }
     public Instant startedAt() { return startedAt; }
     public Instant finishedAt() { return finishedAt; }
     public long inputTokens() { return inputTokens; }
     public long outputTokens() { return outputTokens; }
+    public Boolean buildSucceeded() { return buildSucceeded; }
 
     public void finish(SdlcRunStatus status, String reason, Instant finishedAt, long inputTokens, long outputTokens) {
         this.status = status;
@@ -63,5 +73,9 @@ public class SdlcRun {
         this.finishedAt = finishedAt;
         this.inputTokens = inputTokens;
         this.outputTokens = outputTokens;
+    }
+
+    public void recordBuildResult(boolean succeeded) {
+        this.buildSucceeded = succeeded;
     }
 }

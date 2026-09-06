@@ -32,7 +32,8 @@ class SdlcRunRecorderTest {
     @Test
     void aStartEventCreatesARunningSdlcRun() {
         recorder.onRunRecorded(new RunRecorded("r1", new RunEvent("step", "Workspace ready — branch devflowai/r1",
-                Map.of("branch", "devflowai/r1", "task", "add validation", "repoSlug", "fixture", "phase", "PREPARING"))));
+                Map.of("branch", "devflowai/r1", "task", "add validation", "repoSlug", "fixture", "phase", "PREPARING",
+                        "strategy", "ORCHESTRATED"))));
 
         var run = runs.findById("r1").orElseThrow();
         assertThat(run.task()).isEqualTo("add validation");
@@ -41,9 +42,32 @@ class SdlcRunRecorderTest {
     }
 
     @Test
+    void aStartEventWithStrategyCreatesARunWithThatStrategy() {
+        recorder.onRunRecorded(new RunRecorded("r11", new RunEvent("step", "Workspace ready",
+                Map.of("task", "t", "repoSlug", "fixture", "phase", "PREPARING", "strategy", "DIRECT"))));
+
+        var run = runs.findById("r11").orElseThrow();
+        assertThat(run.strategy()).isEqualTo(ai.devflow.orchestrator.RunStrategy.DIRECT);
+    }
+
+    @Test
+    void aBuildStepEventRecordsBuildSucceededAndTheLatestOneWins() {
+        recorder.onRunRecorded(new RunRecorded("r12", new RunEvent("step", "start",
+                Map.of("task", "t", "repoSlug", "fixture", "phase", "PREPARING", "strategy", "ORCHESTRATED"))));
+
+        recorder.onRunRecorded(new RunRecorded("r12", new RunEvent("step", "Build failed",
+                Map.of("phase", "BUILDING", "success", false))));
+        assertThat(runs.findById("r12").orElseThrow().buildSucceeded()).isFalse();
+
+        recorder.onRunRecorded(new RunRecorded("r12", new RunEvent("step", "Build passed",
+                Map.of("phase", "BUILDING", "success", true))));
+        assertThat(runs.findById("r12").orElseThrow().buildSucceeded()).isTrue();
+    }
+
+    @Test
     void aStartEventIsIdempotentIfSeenTwice() {
         var start = new RunRecorded("r2", new RunEvent("step", "Workspace ready", Map.of(
-                "task", "t", "repoSlug", "fixture", "phase", "PREPARING")));
+                "task", "t", "repoSlug", "fixture", "phase", "PREPARING", "strategy", "ORCHESTRATED")));
         recorder.onRunRecorded(start);
         recorder.onRunRecorded(start);
 
@@ -53,7 +77,7 @@ class SdlcRunRecorderTest {
     @Test
     void aDoneEventFinishesTheRunWithTokens() {
         recorder.onRunRecorded(new RunRecorded("r3", new RunEvent("step", "start",
-                Map.of("task", "t", "repoSlug", "fixture", "phase", "PREPARING"))));
+                Map.of("task", "t", "repoSlug", "fixture", "phase", "PREPARING", "strategy", "ORCHESTRATED"))));
 
         recorder.onRunRecorded(new RunRecorded("r3", new RunEvent("done", "Approved and committed",
                 Map.of("phase", "DONE", "inputTokens", 100L, "outputTokens", 40L))));
@@ -69,7 +93,7 @@ class SdlcRunRecorderTest {
     @Test
     void anAbortedEventMarksTheRunAborted() {
         recorder.onRunRecorded(new RunRecorded("r4", new RunEvent("step", "start",
-                Map.of("task", "t", "repoSlug", "fixture", "phase", "PREPARING"))));
+                Map.of("task", "t", "repoSlug", "fixture", "phase", "PREPARING", "strategy", "ORCHESTRATED"))));
         recorder.onRunRecorded(new RunRecorded("r4", new RunEvent("aborted", "Rejected at pre-flight", Map.of())));
 
         assertThat(runs.findById("r4").orElseThrow().status()).isEqualTo(SdlcRunStatus.ABORTED);
@@ -80,7 +104,7 @@ class SdlcRunRecorderTest {
         // The RunRegistry workspace-prepare-failure path: task/repoSlug arrive
         // on the SAME error event that ends the run (design decision 5).
         recorder.onRunRecorded(new RunRecorded("r5", new RunEvent("error", "Could not prepare the workspace: boom",
-                Map.of("task", "t", "repoSlug", "fixture"))));
+                Map.of("task", "t", "repoSlug", "fixture", "strategy", "ORCHESTRATED"))));
 
         var run = runs.findById("r5").orElseThrow();
         assertThat(run.status()).isEqualTo(SdlcRunStatus.FAILED);

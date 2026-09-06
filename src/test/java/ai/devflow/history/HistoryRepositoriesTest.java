@@ -3,6 +3,7 @@ package ai.devflow.history;
 import ai.devflow.agent.Finding;
 import ai.devflow.orchestrator.Gate;
 import ai.devflow.orchestrator.RunPhase;
+import ai.devflow.orchestrator.RunStrategy;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -23,22 +24,27 @@ class HistoryRepositoriesTest {
 
     @Test
     void savesAndReadsBackASdlcRun() {
-        var run = new SdlcRun("r1", "add validation", "fixture", Instant.now());
+        var run = new SdlcRun("r1", "add validation", "fixture", RunStrategy.ORCHESTRATED, Instant.now());
         runs.save(run);
 
         var found = runs.findById("r1").orElseThrow();
         assertThat(found.task()).isEqualTo("add validation");
         assertThat(found.status()).isEqualTo(SdlcRunStatus.RUNNING);
+        assertThat(found.strategy()).isEqualTo(RunStrategy.ORCHESTRATED);
+        assertThat(found.buildSucceeded()).isNull();
 
+        found.recordBuildResult(true);
         found.finish(SdlcRunStatus.DONE, "Approved", Instant.now(), 100, 50);
         runs.save(found);
-        assertThat(runs.findById("r1").orElseThrow().status()).isEqualTo(SdlcRunStatus.DONE);
+        var reloaded = runs.findById("r1").orElseThrow();
+        assertThat(reloaded.status()).isEqualTo(SdlcRunStatus.DONE);
+        assertThat(reloaded.buildSucceeded()).isTrue();
     }
 
     @Test
     void findTop50OrdersByStartedAtDescending() {
-        runs.save(new SdlcRun("older", "t", "fixture", Instant.now().minusSeconds(60)));
-        runs.save(new SdlcRun("newer", "t", "fixture", Instant.now()));
+        runs.save(new SdlcRun("older", "t", "fixture", RunStrategy.ORCHESTRATED, Instant.now().minusSeconds(60)));
+        runs.save(new SdlcRun("newer", "t", "fixture", RunStrategy.DIRECT, Instant.now()));
 
         assertThat(runs.findTop50ByOrderByStartedAtDesc())
                 .extracting(SdlcRun::id).containsExactly("newer", "older");
