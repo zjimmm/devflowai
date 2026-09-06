@@ -1,8 +1,8 @@
 # devflowai — Status
 
-**Last updated:** 2026-09-05
-**Branch:** `main` — 71 commits, all merged, `./gradlew clean test`: 154 tests, 0 failures
-**Spec:** `docs/superpowers/specs/2026-08-27-devflowai-design.md`
+**Last updated:** 2026-09-06
+**Branch:** `main` — 88 commits, all merged, `./gradlew clean test`: 182 tests, 0 failures
+**Spec:** `docs/superpowers/specs/2026-08-27-devflowai-design.md` (Sub-project 1 additionally argues from `docs/superpowers/specs/2026-09-05-sdlc-mvp-core-loop-design.md`)
 
 ---
 
@@ -24,12 +24,19 @@ unverified](#whats-actually-unverified).
 | [Phase 4](docs/superpowers/plans/2026-08-29-devflowai-phase-4.md) | 10 | 1 (3 commits) | ✅ Merged |
 | [Phase 5](docs/superpowers/plans/2026-09-05-devflowai-phase-5.md) | 10 | 1 (1 commit) | ✅ Merged |
 | [Phase 6](docs/superpowers/plans/2026-09-05-devflowai-phase-6.md) | 6 | 2 (1 commit each) | ✅ Merged |
+| [Sub-project 1 — SDLC MVP core loop](docs/superpowers/plans/2026-09-05-sdlc-mvp-core-loop.md) | 10 | 4 (1 commit each) | ✅ Merged |
 
-All four plans were executed subagent-driven: a fresh implementer per task, an
+All five plans were executed subagent-driven: a fresh implementer per task, an
 independent reviewer per task (never the implementer grading its own work), a
 fix loop for anything the reviewer flagged, and one broad whole-branch review
 at the end of each plan. The ledgers are gone (deleted per process once each
 plan's final review went clean) — the git history below is now the record.
+
+Sub-project 1 begins a naming shift, not just a new plan: it's the first
+increment of steering devflowai from a single-repo coding-crew library toward
+the full AI-native SDLC control plane described in `DevFlowAI_PRD.md` — see
+that sub-project's own section below for what changed and why "Sub-project"
+replaces "Phase" going forward.
 
 ---
 
@@ -268,6 +275,94 @@ single-user framing, recorded as such in §4.1 rather than left implicit.
 
 ---
 
+## Sub-project 1 — SDLC MVP core loop
+
+**Goal:** the first increment of steering devflowai toward the full-SDLC
+vision in `DevFlowAI_PRD.md` — a persisted audit trail, a provider-neutral
+seam for the coding agents, and a Planner stage, without rebuilding the
+proven coder→reviewer→gate loop. This project's own earlier "Phase 7" sketch
+(below, now superseded) had lumped "the rest of the crew" together with a
+routing evaluation harness; brainstorming the actual PRD pivot split that
+into five sub-projects and scoped this first one down to just the pieces a
+real MVP needs — see the spec's own non-goals (§8) for what was deliberately
+deferred to Sub-projects 2–5.
+
+| Task | What it built |
+|---|---|
+| 1 | JPA entities/repositories (`SdlcRun`, `StageExecution`, `ReviewFinding`, `Approval`) + H2, this project's first persistence dependency |
+| 2 | `SdlcRunRecorder` — a write-behind `@EventListener` reacting to a new `RunRecorded` Spring event fired alongside the existing SSE push, with zero changes to `Orchestrator`'s or `RunEventPublisher`'s public API |
+| 3–4 | `ReviewFinding` and `Approval` recording, extending the same recorder |
+| 5–6 | The `CodingWorker` seam — `CoderAgent`/`ReviewerAgent` refactored from calling Spring AI's `ChatClient` directly to delegating through a provider-neutral interface (`SpringAiCodingWorker` the only implementation), a pure behavior-preserving refactor |
+| 7 | `PlannerAgent` — runs once per run, after Gate 1, feeding `RunState.plan()` into the coder's prompt |
+| 8 | Model-tier split: Coder/Reviewer move from Opus 5 to Sonnet 5 (both at `XHIGH` effort); Planner gets Opus 5 at `XHIGH` — a real cost/quality trade to test, not an assumed win |
+| 9–10 | `GET /api/runs/history` and a minimal past-runs list on the operator page |
+
+**`OutputConfig.Effort.XHIGH` was verified real before use, not assumed:**
+`javap` against the actual resolved `anthropic-java-core-2.52.0.jar` confirmed
+`LOW, MEDIUM, HIGH, XHIGH, MAX` all exist as compiled constants — CLAUDE.md's
+"Verified Spring AI 2.0.1 syntax" section had previously only tested `HIGH`.
+
+**Real bugs found and fixed:**
+
+- **Caught only by a task reviewer who independently ran the test, not by
+  reading the code:** `HistoryRepositoriesTest` (Task 1) used `@SpringBootTest`
+  in place of `@DataJpaTest` (confirmed genuinely removed from Boot 4.1.1,
+  not just missing a starter dependency — a `spring-boot-starter-data-jpa-test`
+  spike still couldn't resolve the annotation), but without `@Transactional`
+  — meaning test methods shared the same JVM-lifetime H2 database with no
+  rollback between them. The reviewer reproduced the exact order-dependent
+  pass/fail live before flagging it. Fixed with `@Transactional` on the class.
+- **A structural risk in the new recorder, caught by task review before it
+  could compound:** `SdlcRunRecorder.onRunRecorded` ran with no exception
+  isolation — since Spring's default event multicaster invokes
+  `@EventListener` methods synchronously in the publisher's thread, a
+  persistence hiccup (a `DataAccessException`, an invalid phase string) would
+  have propagated out through `Orchestrator.emit()` and aborted a live
+  coding run over an audit-trail write failure. Fixed by wrapping the
+  listener in the same catch-and-drop philosophy `RunEventPublisher.
+  sendQuietly` already uses for SSE delivery — ruled load-bearing and fixed
+  immediately rather than deferred, since Tasks 3 and 4 both extended the
+  same method next.
+- **Caught only by the final whole-branch review:** the new past-runs table
+  built each row via a template-literal `innerHTML` assignment, interpolating
+  the task string — untrusted, since Phase 5 lets an operator attach a task
+  document instead of typing it — directly as raw HTML. Fixed by building
+  each cell with `createElement`/`textContent`, matching the page's existing
+  convention everywhere else it renders dynamic text.
+- **Also caught only by the final review:** a `SdlcRunRecorderTest` assertion
+  (`runs.count()`) counted the *entire* shared H2 table rather than scoping
+  to the `runId` under test — passing only by accident of Gradle's
+  alphabetical test-class ordering, and only became a live risk once Task 7
+  wired `RunFlowIntegrationTest` to exercise the same recorder through a real
+  run. Neither task's own reviewer could see that coupling. Fixed by scoping
+  the assertion to its `runId`.
+- The final review also found nothing proved `state.plan()` actually reached
+  the text sent to the model — only that it got set. `CoderAgent`'s two-line
+  plan-inclusion block could have been deleted and every test would still
+  have passed. Closed with a dedicated prompt-capture test.
+
+**Design calls made explicitly:** `WorkerRequest` carries a fully-built
+prompt string and a tool list rather than decomposed task/memory/plan
+fields — keeps prompt construction where it already correctly lived, and is
+equally provider-neutral for a future CLI-shelling worker. `PlannerAgent`
+never returns an explicit `FAILED` status, mirroring `CoderAgent`'s own
+style rather than inventing fail-closed JSON parsing it doesn't need. No new
+`RunPhase` value was added for the planning step — its `StageExecution` row
+is recorded under whatever phase preceded it (`PREPARING`).
+
+**Known, deliberately unresolved after this sub-project:** `src/test/
+resources/application.yml` fully replaces (not merges with) `src/main/
+resources/application.yml` on the test classpath, so `ddl-auto: update` and
+`open-in-view: false` are never actually exercised by any test — harmless
+today only because Spring Boot's own embedded-database auto-detection
+defaults to `create-drop`, which happens to make schema creation work
+anyway. A run that crashes mid-flight leaves its `SdlcRun` row stuck at
+`RUNNING` forever, with no startup reconciliation — accepted per spec §3 as
+an audit trail, not true crash-resumability. `claude-sonnet-5`'s wire id has
+never been called against the live API (see below).
+
+---
+
 ## What's actually unverified
 
 **No live call to the Anthropic API has been made anywhere in this codebase.**
@@ -283,6 +378,12 @@ stands in for it:
   `CoderAgentLiveTest`, `EndToEndLiveTest`) that *would* exercise the real
   API — all three compile, are correctly gated, and have never run to a
   real pass.
+- Sub-project 1 moved Coder/Reviewer to `claude-sonnet-5` and added a
+  Planner on `claude-opus-5`, both at `XHIGH` effort — `EndToEndLiveTest`
+  now exercises all three tiers plus `XHIGH` through the real `ChatClient`
+  beans in one run, but that run has never happened. The final whole-branch
+  review flagged this explicitly and recommended gating any merge on it;
+  no `ANTHROPIC_API_KEY` was available in that session, so it's still open.
 
 **Before trusting this for a demo, run:**
 
@@ -291,6 +392,9 @@ export JAVA_HOME=/opt/homebrew/opt/openjdk@21
 export ANTHROPIC_API_KEY=<your key>
 ./gradlew liveTest
 ```
+
+That one command now validates the stale-default/temperature landmines,
+all three pinned model ids, and `XHIGH` effort in a single pass.
 
 ---
 
@@ -309,19 +413,32 @@ judged non-blocking or explicitly deferred to a later phase.
 
 ---
 
-## What's left — Phase 7
+## What's left
 
-Sketched in the original spec, not planned in task-by-task detail yet:
+The original spec's "Phase 7 — the rest of the crew" (planner, test-writer,
+doc-writer agents, a routing evaluation harness) is superseded: Sub-project 1
+above shipped the Planner piece of it. The rest — test-writer/doc-writer
+agents and evaluation — now falls under the PRD-driven sub-project sequence:
 
-- **Phase 7 — the rest of the crew.** Planner, test-writer, doc-writer agents,
-  plus a routing evaluation harness.
+- **Sub-project 2** — requirement analysis, architecture review, a
+  security/quality gate, a documentation stage, the policy engine (PRD
+  Phase 2).
+- **Sub-project 3** — evaluation/benchmark mode (PRD Phase 3's own stated
+  differentiator); Sub-project 1's Sonnet-vs-Opus model-tier split is
+  deliberately set up as something this mode would measure, not just assume.
+- **Sub-project 4** — multi-repo, multi-worker, a real mission-control
+  dashboard, RBAC. Sub-project 1's minimal past-runs list is its cheap,
+  intentional precursor, not an attempt at the real thing.
+- **Sub-project 5** — PR/CI/CD and deployment lifecycle (PRD Phase 4).
+
+Not yet re-scoped into that sequence, still worth doing regardless of which
+sub-project picks it up:
+
 - **A real end-to-end run against a cloned repo, reaching an actual commit**
   — Phase 6's live test deliberately stops before Gate 2's build to avoid a
   slow, recursively-nested build against devflowai's own test suite. Worth a
   pass against some other small, real, buildable public repo to close the
   `git add .` / `.devflowai/` residual risk noted above, and to prove the
   skill/memory files an actual clone would produce really do get committed.
-
-Also on the table, discussed but not started: a Dockerfile and a deployed
-instance, so the project has a link an interviewer can open rather than a
-repo they have to clone and run.
+- A Dockerfile and a deployed instance, so the project has a link to open
+  rather than a repo to clone and run.
