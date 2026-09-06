@@ -23,11 +23,18 @@ class BuildToolsTest {
     void tearDown() throws Exception { workspace.cleanup(); }
 
     @Test
-    void reportsMissingWrapperClearly() {
-        // The fixture has no gradlew wrapper committed; BuildTools must say so
-        // rather than hanging or throwing.
+    void reportsMissingWrapperClearly() throws Exception {
+        // The fixture now ships a real gradlew (Sub-project 2's build-pass
+        // policy needs a fixture whose build can genuinely pass), so this
+        // test deletes it from its own copied workspace to still exercise
+        // the no-wrapper path rather than relying on the fixture itself
+        // lacking one.
+        Files.delete(workspace.root().resolve("gradlew"));
+
         var result = build.build("test");
-        assertThat(result.output()).isNotBlank();
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.output()).contains("No build wrapper found");
     }
 
     @Test
