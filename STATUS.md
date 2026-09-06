@@ -1,8 +1,8 @@
 # devflowai — Status
 
 **Last updated:** 2026-09-06
-**Branch:** `main` — 95 commits, all merged, `./gradlew clean test`: 193 tests, 0 failures
-**Spec:** `docs/superpowers/specs/2026-08-27-devflowai-design.md` (Sub-project 1 additionally argues from `docs/superpowers/specs/2026-09-05-sdlc-mvp-core-loop-design.md`; Sub-project 2 from `docs/superpowers/specs/2026-09-06-sdlc-security-quality-gate-design.md`)
+**Branch:** `main` — 104 commits, all merged, `./gradlew clean test`: 203 tests, 0 failures
+**Spec:** `docs/superpowers/specs/2026-08-27-devflowai-design.md` (Sub-project 1 additionally argues from `docs/superpowers/specs/2026-09-05-sdlc-mvp-core-loop-design.md`; Sub-project 2 from `docs/superpowers/specs/2026-09-06-sdlc-security-quality-gate-design.md`; Sub-project 3 from `docs/superpowers/specs/2026-09-06-sdlc-evaluation-mode-design.md`)
 
 ---
 
@@ -26,8 +26,9 @@ unverified](#whats-actually-unverified).
 | [Phase 6](docs/superpowers/plans/2026-09-05-devflowai-phase-6.md) | 6 | 2 (1 commit each) | ✅ Merged |
 | [Sub-project 1 — SDLC MVP core loop](docs/superpowers/plans/2026-09-05-sdlc-mvp-core-loop.md) | 10 | 4 (1 commit each) | ✅ Merged |
 | [Sub-project 2 — Security/Quality Gate](docs/superpowers/plans/2026-09-06-sdlc-security-quality-gate.md) | 3 | 1 (1 commit) | ✅ Merged |
+| [Sub-project 3 — Evaluation Mode](docs/superpowers/plans/2026-09-06-sdlc-evaluation-mode.md) | 4 | 2 (1 commit each) | ✅ Merged |
 
-All six plans were executed subagent-driven: a fresh implementer per task, an
+All seven plans were executed subagent-driven: a fresh implementer per task, an
 independent reviewer per task (never the implementer grading its own work), a
 fix loop for anything the reviewer flagged, and one broad whole-branch review
 at the end of each plan. The ledgers are gone (deleted per process once each
@@ -453,6 +454,108 @@ there would compile silently and is currently guarded only by
 
 ---
 
+## Sub-project 3 — Evaluation Mode
+
+**Goal:** PRD §22 ("Evaluation and Benchmark Mode") frames Strategy A (a bare,
+autonomous coding agent) vs. Strategy B (the full devflowai pipeline) as "a
+major differentiator" — proof that all the orchestration overhead (planner,
+reviewer, gates, policy engine) actually earns its keep. Brainstorming scoped
+this down deliberately: compare the two strategies using only metrics
+devflowai already persists — no hidden-test benchmark harness, no dashboard,
+no dollar-cost conversion. Strategy A runs fully autonomously (all three human
+gates skipped) rather than a hybrid, and reuses the exact same `coderAgent`
+bean/model Strategy B's coder uses, so the comparison never measures a
+different model as a confound.
+
+| Task | What it built |
+|---|---|
+| 1 | `RunExecutor` interface, `RunStrategy` enum (`ORCHESTRATED`/`DIRECT`), `Orchestrator implements RunExecutor` (one-line, zero behavior change); `DirectExecutor` — task → coder → build (metrics only, never gates on it) → commit, deliberately not sharing `Orchestrator`'s private `emit`/`cleanUp` helpers (two small helpers don't justify coupling two independent executors before a third one exists to justify the abstraction) |
+| 2 | `SdlcRun` gains `strategy`/`buildSucceeded`; `SdlcRunRecorder` gains `maybeRecordBuildResult`; `RunSummary` surfaces both over the history API |
+| 3 | `RunRegistry`/`StartRunRequest`/`RunController`/`OrchestrationConfig` wired end-to-end so an HTTP caller can request either strategy, including a new `directExecutor` Spring bean |
+| 4 | Operator page gets a Strategy dropdown on the run-start form and two new past-runs table columns (Strategy, Build) |
+
+**The most serious finding, caught by a task reviewer's independent
+verification, not by trusting the implementer's report:** Task 2's new
+`SdlcRunRecorder.maybeCreateRun` guard requires a `"strategy"` key in event
+data before creating any history row — but `Orchestrator.java`'s own
+"Workspace ready" event (the *only* history-row trigger for the default,
+main ORCHESTRATED pipeline) never carried one anywhere in the plan's four
+tasks, a requirement dropped between architecture notes and the written plan.
+Net effect, had it shipped: every default-strategy run would silently never
+get a history row — no exception, the `if` guard just evaluates false —
+defeating the entire comparison feature for the strategy most people would
+actually use. Fixed by tagging `Orchestrator`'s own event with
+`RunStrategy.ORCHESTRATED.name()`, mirroring the identical line `DirectExecutor`
+already had.
+
+**A second finding from the same review, invisible to any test:**
+`SdlcRun.strategy` was declared `@Column(nullable = false)` — Hibernate's
+`ddl-auto: update` adding a NOT NULL column with no default to the app's
+real, persistent, file-based H2 database (not the in-memory test one) fails
+against any pre-existing `sdlc_run` rows, e.g. from earlier sub-projects'
+manual `bootRun` verification. The project's established "new nullable
+columns need no migration" precedent didn't cover a NOT-NULL one. Fixed by
+dropping the constraint at the DB level while keeping the Java-level
+guarantee (the constructor still requires a real `RunStrategy` argument for
+every row the app creates going forward).
+
+**The final whole-branch review's two findings:** no test proved the
+`"strategy"` key actually survives end-to-end from either executor's emitted
+events into a persisted row — the exact producer/consumer contract the two
+findings above had already broken once on this branch, still undefended.
+Closed with two assertions in `RunFlowIntegrationTest` against
+`SdlcRunRepository`, one per strategy. Separately, `CLAUDE.md`'s documented
+`POST /api/runs` contract didn't mention the new `strategy` field or that a
+Direct-strategy run skips the policy engine entirely — both now documented.
+
+**Design calls made explicitly:** `RunExecutor.run(...)` returns
+`Orchestrator.RunOutcome` — a type owned by one of its two implementations
+rather than by the interface itself, a deliberate, documented "wart" that
+avoids a broader rename across every existing `OrchestratorTest` call site
+for a purely cosmetic gain; revisit if a third executor ever needs a
+strategy-agnostic outcome type. `StartRunRequest` gained its `strategy` field
+via a second, delegating 2-arg constructor (mirroring `RunState`'s existing
+3-arg-delegates-to-4-arg pattern) specifically so every pre-existing Java
+call site — not just HTTP/JSON callers — kept compiling unmodified. Spring
+resolves the new `directExecutor` bean parameter purely by
+parameter-name-to-bean-name matching (since `Orchestrator` and `DirectExecutor`
+are both `RunExecutor`s in the context) — the same mechanism already relied
+on for `OrchestrationConfig`'s three same-typed `Agent` parameters, not a new
+pattern; verified at runtime by an actual context-booting `@SpringBootTest`,
+not just assumed to compile.
+
+**Known, deliberately unfixed gaps from this sub-project:**
+
+- `SdlcRunRecorder.maybeRecordBuildResult` reads only the `"success"` key,
+  which is `false` both when a build genuinely fails *and* when
+  `BuildTools` found no build wrapper at all — so the past-runs table's
+  Build column can show "failed" for a target repo that never had a
+  buildable wrapper to begin with. Both strategies are affected identically,
+  so the A/B comparison itself isn't skewed, but the column can misreport on
+  a feature whose whole purpose is metric fidelity. A spec-level
+  simplification (§4 explicitly chose reusing the existing `success` key
+  over a new schema field), not a coding defect — fixable later by also
+  threading `build.wrapperFound()` through if it matters.
+- `RunController` silently routes any unrecognized `strategy` string (a typo
+  like `"dircet"`) to `ORCHESTRATED` rather than rejecting it — unlike an
+  invalid `repo` string, which returns 400. Detectable after the fact via the
+  new Strategy column, but a silently-misrouted run undercuts measurement
+  integrity more than a rejected one would.
+- `RunRegistry`'s pre-existing race (the async task can call
+  `runs.remove(runId)` before `runs.put(runId, handle)` finishes, permanently
+  leaking a registry entry) is not new to this sub-project, but Direct runs
+  finish far faster than gate-blocked Orchestrated ones, materially widening
+  the window. Worth its own follow-up (move the `put` above the `submit`).
+- `OrchestrationConfig.directExecutor(...)` is typed to return the
+  `RunExecutor` interface rather than the concrete `DirectExecutor` class
+  (the `orchestrator` bean beside it uses its concrete type) — loses type
+  information for any future by-type injection. Also, the context now holds
+  both an `ExecutorService` bean named `runExecutor` and an interface named
+  `RunExecutor` — no actual resolution conflict since the types differ, but
+  a readability trap for the next person reading this file.
+
+---
+
 ## What's actually unverified
 
 **No live call to the Anthropic API has been made anywhere in this codebase.**
@@ -520,9 +623,6 @@ agents and evaluation — now falls under the PRD-driven sub-project sequence:
   5) was carved out. Each remaining stage gets its own brainstorming pass
   once picked up, informed by how `PolicyEngine`'s one real consumer
   actually behaved rather than designed against all four speculatively.
-- **Sub-project 3** — evaluation/benchmark mode (PRD Phase 3's own stated
-  differentiator); Sub-project 1's Sonnet-vs-Opus model-tier split is
-  deliberately set up as something this mode would measure, not just assume.
 - **Sub-project 4** — multi-repo, multi-worker, a real mission-control
   dashboard, RBAC. Sub-project 1's minimal past-runs list is its cheap,
   intentional precursor, not an attempt at the real thing.
