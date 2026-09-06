@@ -1,8 +1,8 @@
 # devflowai — Status
 
 **Last updated:** 2026-09-06
-**Branch:** `main` — 88 commits, all merged, `./gradlew clean test`: 182 tests, 0 failures
-**Spec:** `docs/superpowers/specs/2026-08-27-devflowai-design.md` (Sub-project 1 additionally argues from `docs/superpowers/specs/2026-09-05-sdlc-mvp-core-loop-design.md`)
+**Branch:** `main` — 95 commits, all merged, `./gradlew clean test`: 193 tests, 0 failures
+**Spec:** `docs/superpowers/specs/2026-08-27-devflowai-design.md` (Sub-project 1 additionally argues from `docs/superpowers/specs/2026-09-05-sdlc-mvp-core-loop-design.md`; Sub-project 2 from `docs/superpowers/specs/2026-09-06-sdlc-security-quality-gate-design.md`)
 
 ---
 
@@ -25,8 +25,9 @@ unverified](#whats-actually-unverified).
 | [Phase 5](docs/superpowers/plans/2026-09-05-devflowai-phase-5.md) | 10 | 1 (1 commit) | ✅ Merged |
 | [Phase 6](docs/superpowers/plans/2026-09-05-devflowai-phase-6.md) | 6 | 2 (1 commit each) | ✅ Merged |
 | [Sub-project 1 — SDLC MVP core loop](docs/superpowers/plans/2026-09-05-sdlc-mvp-core-loop.md) | 10 | 4 (1 commit each) | ✅ Merged |
+| [Sub-project 2 — Security/Quality Gate](docs/superpowers/plans/2026-09-06-sdlc-security-quality-gate.md) | 3 | 1 (1 commit) | ✅ Merged |
 
-All five plans were executed subagent-driven: a fresh implementer per task, an
+All six plans were executed subagent-driven: a fresh implementer per task, an
 independent reviewer per task (never the implementer grading its own work), a
 fix loop for anything the reviewer flagged, and one broad whole-branch review
 at the end of each plan. The ledgers are gone (deleted per process once each
@@ -363,6 +364,95 @@ never been called against the live API (see below).
 
 ---
 
+## Sub-project 2 — Security/Quality Gate + Policy Engine
+
+**Goal:** the PRD's Phase 2 bundles nine things (requirement analysis,
+acceptance criteria, architecture review, risk classification, a
+security/quality stage, documentation, PR creation, a policy engine, CI
+integration) — PR/CI already moved to Sub-project 5. What remained was
+still multiple things the PRD treats as inseparable from policy: "the
+security/quality gate *is* essentially a policy table." Rather than build
+four inert stages plus a policy engine with nothing real to check, this
+sub-project shipped the smallest real slice: one enforced rule
+(`Build MUST PASS`), evaluated by a small, deliberately extensible
+`PolicyEngine` — the first real consumer of "configurable policy," not a
+speculative framework.
+
+| Task | What it built |
+|---|---|
+| 1 | `ai.devflow.policy` package (`PolicyContext`, `PolicyResult`, `PolicyEngine`, `ConfigurablePolicyEngine`); `Finding.Origin.POLICY` + `Finding.fromPolicy(...)` |
+| 2 | A real, working Gradle wrapper vendored into the bundled test fixture — previously it had none, so its build always failed |
+| 3 | `Orchestrator` wiring: the policy check runs once per loop iteration, right after the build and before Gate 3; a failure re-enters the loop exactly like today's Gate-2 human-rejection-with-reason path |
+
+**A scope narrowing found during design, not implementation:** the PRD's
+"Critical/High security findings MUST = 0" line has no meaningful data to
+check against in this codebase — by the time a policy check could run, the
+reviewer has already said OK, and `AgentResult.ok(...)` structurally
+carries zero findings. That line assumes a dedicated security scanner's
+output, which is real new tool integration, explicitly out of scope here.
+`Build MUST PASS` was the one rule from the PRD's example table that was
+both meaningful and free: build success was already computed, just never
+enforced (Gate 3 showed "Build failed" to the human and proceeded anyway).
+
+**The most serious finding, caught only by the final whole-branch review:**
+treating a *missing* build wrapper the same as a *failed* build meant any
+`ClonedWorkspace` run (Phase 6) against a repo without a committed
+Gradle/Maven wrapper — any Python/Node/Go/Rust repo, or a Java repo that
+doesn't commit its wrapper — would now fail policy every iteration, exhaust
+the retry cap, and plausibly lead the coder to fabricate a build wrapper
+into someone's real cloned repo just to satisfy the check. This was a
+genuine unreviewed side effect on functionality outside this sub-project's
+stated scope: the spec only ever considered the bundled fixture. Fixed by
+giving `BuildTools.BuildResult` a `wrapperFound` flag and `PolicyContext` a
+`buildRan` flag — the policy only enforces build-pass when a build actually
+ran; a missing wrapper is "nothing to enforce," not a failure.
+
+**A second finding from the same review, where the reviewer's own suggested
+fix was overridden:** the coder received zero diagnostic content on a
+policy failure (`"- [POLICY/HIGH] the build did not pass"`, no compiler
+error, no failing test name). The reviewer suggested giving `CoderAgent` its
+own callable `BuildTools`. That fix was rejected: it would let the coder
+invoke the target repo's build on its own initiative, bypassing Gate 2's
+human approval entirely — the identical bug class `GitTools.commit()` is
+already deliberately *not* an `@Tool` to avoid (its own Javadoc: "committing
+sits behind Gate 3 (a human gate)... an agent-callable commit tool would let
+the coder commit mid-task"). Fixed instead by appending the build's own
+output (already bounded to 4 KB by `BuildTools`) to the policy-failure
+`Finding`'s message — the coder gets real diagnostic content through the
+existing channel, with no new tool and no gate bypass.
+
+**A real, measured cost accepted rather than discovered later:**
+`Orchestrator.execute()` constructs `BuildTools` directly and always calls
+the real `build("test")` — unmockable. Giving the fixture a working build
+means every test that already drove a run through Gate 2 (roughly 15 in
+`OrchestratorTest`, plus `RunFlowIntegrationTest`) now spawns one real
+~0.85-second Gradle process. Measured before committing to this design
+(three fresh-directory runs, each ~0.85s, no network call on a warm cache):
+the default suite went from ~11s to ~28–34s. Accepted as the cost of a
+fixture whose build genuinely passes, which the policy engine needs to be
+meaningful by default.
+
+**Design calls made explicitly:** `PolicyContext` is a record specifically
+so later sub-projects (a coverage percentage, a scanner's finding counts)
+can extend it without another signature change — already exercised once, by
+the `buildRan` fix above. `PolicyResult`'s compact constructor now rejects a
+failing result with a blank/null reason, since `PolicyEngine` is an
+advertised extension point other sub-projects will implement against, not
+just this one shipped rule. A policy-driven cap-exhaustion is now
+distinguished in `RunOutcome.reason` from a reviewer-driven one, so an
+operator (or API caller) isn't misled into blaming the reviewer.
+
+**Known, deliberately unresolved after this sub-project:** `BuildToolsTest`
+asserts `wrapperFound()` at only 2 of `BuildResult`'s 5 return sites (the
+other 3 — IOException, interrupted, timeout — are correct by inspection but
+untested directly). No `OrchestratorTest` case exercises the actual
+`build.wrapperFound()` → `PolicyContext` argument wiring at its real call
+site; both constructor arguments are booleans, so an accidental order swap
+there would compile silently and is currently guarded only by
+`ConfigurablePolicyEngineTest` at the unit level.
+
+---
+
 ## What's actually unverified
 
 **No live call to the Anthropic API has been made anywhere in this codebase.**
@@ -405,7 +495,7 @@ judged non-blocking or explicitly deferred to a later phase.
 
 | Gap | Why it's not fixed yet |
 |---|---|
-| The bundled fixture has no `gradlew`/`mvnw` | Every real run's Gate 2 will show "Build failed: no wrapper found." Deliberate in Phase 0–3 (it's what lets `BuildToolsTest` test the missing-wrapper path) — but Phase 4's web page is the first thing to make this visible to an operator. |
+| ~~The bundled fixture has no `gradlew`/`mvnw`~~ **Resolved by Sub-project 2** | Deliberate in Phase 0–3 (it let `BuildToolsTest` test the missing-wrapper path without a second fixture) until Sub-project 2's build-must-pass policy made a permanently-failing fixture actively harmful, not just cosmetically confusing. A real, working Gradle wrapper is now vendored into the fixture; the missing-wrapper path is still tested, but by deleting the wrapper from one test's own copied workspace rather than relying on the shared fixture lacking one. |
 | `GitTools.commit()`'s `git add .` is unconditional | **Re-checked 2026-09-05:** empirically verified (`GitToolsTest.gitignoredBuildOutputNeverReachesStatusChangedFilesOrCommit`) that JGit's `add`/`status` already honor a repo's own `.gitignore` — a gitignored `build/` directory never reaches `changedFiles()`, `status()`, or a commit. The risk this row originally described (any real wrapper corrupting the Gate 3 file list) does not hold for a repo with normal `.gitignore` hygiene, which is nearly all of them. Residual, narrower risk: a target repo whose `.gitignore` is missing or incomplete for its own build tool. Separately, Phase 5 depends on this same unconditional `git add .` to stage `.devflowai/skills/*.md` and `.devflowai/memory.md` — so if a real repo's own `.gitignore` happens to exclude `.devflowai/`, the learning loop's commit would silently no-op instead. **Phase 6 shipped `ClonedWorkspace` without resolving either direction** — its live test clones a real repo but rejects before any commit happens, so neither assumption has been exercised against real repo content yet. Worth a real end-to-end test (clone a repo, actually reach Gate 3, commit) before relying on either. |
 | `index.html`'s `showGate()` ignores whether the build passed | Minor — the preceding "Build passed/failed" step line is already visible just above the gate box. |
 | Server binds `0.0.0.0` with no authentication | Acceptable for the design's stated scope (single-user, local, non-hardened tool per spec §11) — do not expose this port to an untrusted network. |
@@ -420,9 +510,16 @@ doc-writer agents, a routing evaluation harness) is superseded: Sub-project 1
 above shipped the Planner piece of it. The rest — test-writer/doc-writer
 agents and evaluation — now falls under the PRD-driven sub-project sequence:
 
-- **Sub-project 2** — requirement analysis, architecture review, a
-  security/quality gate, a documentation stage, the policy engine (PRD
-  Phase 2).
+- **Not yet scheduled a sub-project number** — the rest of PRD Phase 2:
+  requirement analysis, acceptance-criteria extraction, architecture review,
+  risk classification, and a documentation stage. Sub-project 2 deliberately
+  shipped only the security/quality gate's one enforceable rule
+  (build-must-pass) plus the `PolicyEngine` seam these four stages will each
+  need — not all five PRD Phase 2 items, which the original brainstorming
+  session judged too large for one sub-project even after PR/CI (Sub-project
+  5) was carved out. Each remaining stage gets its own brainstorming pass
+  once picked up, informed by how `PolicyEngine`'s one real consumer
+  actually behaved rather than designed against all four speculatively.
 - **Sub-project 3** — evaluation/benchmark mode (PRD Phase 3's own stated
   differentiator); Sub-project 1's Sonnet-vs-Opus model-tier split is
   deliberately set up as something this mode would measure, not just assume.
