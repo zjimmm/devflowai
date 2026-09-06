@@ -2,6 +2,7 @@ package ai.devflow.web;
 
 import ai.devflow.orchestrator.*;
 import ai.devflow.event.RunEventPublisher;
+import ai.devflow.orchestrator.RunStrategy;
 import ai.devflow.workspace.FixtureWorkspace;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.*;
@@ -46,7 +47,7 @@ class RunControllerTest {
 
     @Test
     void startingARunReturnsItsId() throws Exception {
-        when(registry.start(any(), any())).thenReturn(handleFor("abc123"));
+        when(registry.start(any(), any(), any())).thenReturn(handleFor("abc123"));
 
         mvc.perform(post("/api/runs")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -54,7 +55,7 @@ class RunControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.runId").value("abc123"));
 
-        verify(registry).start("do a thing", "fixture");
+        verify(registry).start("do a thing", "fixture", RunStrategy.ORCHESTRATED);
     }
 
     @Test
@@ -69,7 +70,7 @@ class RunControllerTest {
 
     @Test
     void startingARunRejectsARepoStringThatIsNotAnHttpsUrl() throws Exception {
-        when(registry.start(any(), any()))
+        when(registry.start(any(), any(), any()))
                 .thenThrow(new IllegalArgumentException("Repo must be an https:// URL, got: ext::sh -c \"true\""));
 
         mvc.perform(post("/api/runs")
@@ -77,6 +78,18 @@ class RunControllerTest {
                         .content(json.writeValueAsString(new StartRunRequest("do a thing", "ext::sh -c \"true\""))))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").value("Repo must be an https:// URL, got: ext::sh -c \"true\""));
+    }
+
+    @Test
+    void startingARunWithDirectStrategyPassesItThrough() throws Exception {
+        when(registry.start(any(), any(), any())).thenReturn(handleFor("direct1"));
+
+        mvc.perform(post("/api/runs")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(new StartRunRequest("do a thing", "fixture", "direct"))))
+                .andExpect(status().isOk());
+
+        verify(registry).start("do a thing", "fixture", RunStrategy.DIRECT);
     }
 
     @Test

@@ -4,7 +4,9 @@ import ai.devflow.agent.*;
 import ai.devflow.event.RunEventPublisher;
 import ai.devflow.memory.FileMemoryStore;
 import ai.devflow.memory.MemoryStore;
+import ai.devflow.orchestrator.DirectExecutor;
 import ai.devflow.orchestrator.Orchestrator;
+import ai.devflow.orchestrator.RunExecutor;
 import ai.devflow.orchestrator.RunRegistry;
 import ai.devflow.policy.ConfigurablePolicyEngine;
 import ai.devflow.policy.PolicyEngine;
@@ -111,11 +113,17 @@ public class OrchestrationConfig {
     }
 
     @Bean
-    RunRegistry runRegistry(Orchestrator orchestrator, RunEventPublisher events, ExecutorService runExecutor,
+    RunExecutor directExecutor(Agent coderAgent, RunEventPublisher events,
+                              @Value("${devflowai.build.timeout-minutes:5}") long buildTimeoutMinutes) {
+        return new DirectExecutor(coderAgent, events, Duration.ofMinutes(buildTimeoutMinutes));
+    }
+
+    @Bean
+    RunRegistry runRegistry(Orchestrator orchestrator, RunExecutor directExecutor, RunEventPublisher events, ExecutorService runExecutor,
                             @Value("${devflowai.fixture.path:src/test/resources/fixture}") String fixturePath,
                             @Value("${devflowai.gate.timeout-minutes:10}") long gateTimeoutMinutes,
                             @Value("${devflowai.clone.timeout-minutes:2}") long cloneTimeoutMinutes) {
-        return new RunRegistry(orchestrator, events, runExecutor,
+        return new RunRegistry(orchestrator, directExecutor, events, runExecutor,
                 Path.of(fixturePath), Duration.ofMinutes(gateTimeoutMinutes),
                 Duration.ofMinutes(cloneTimeoutMinutes));
     }

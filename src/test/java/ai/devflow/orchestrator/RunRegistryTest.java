@@ -49,15 +49,16 @@ class RunRegistryTest {
                 (task, index) -> List.of(), (state, findings, reason) -> ScribeDraft.EMPTY,
                 new NoOpSkillStore(), new NoOpMemoryStore(),
                 events, 3, 5, Duration.ofMinutes(1), context -> PolicyResult.ok());
-        registry = new RunRegistry(orchestrator, events, Executors.newCachedThreadPool(),
+        RunExecutor stubDirectExecutor = (state, gate) -> new Orchestrator.RunOutcome(true, "stub", state);
+        registry = new RunRegistry(orchestrator, stubDirectExecutor, events, Executors.newCachedThreadPool(),
                 java.nio.file.Path.of("src/test/resources/fixture"), Duration.ofSeconds(2),
                 Duration.ofSeconds(2));
     }
 
     @Test
     void startingARunGivesItAUniqueIdAndRegistersIt() {
-        RunHandle a = registry.start("task one", "fixture");
-        RunHandle b = registry.start("task two", "fixture");
+        RunHandle a = registry.start("task one", "fixture", RunStrategy.ORCHESTRATED);
+        RunHandle b = registry.start("task two", "fixture", RunStrategy.ORCHESTRATED);
 
         assertThat(a.runId()).isNotBlank();
         assertThat(b.runId()).isNotEqualTo(a.runId());
@@ -72,7 +73,7 @@ class RunRegistryTest {
 
     @Test
     void theHandleExposesTheRunsStateAndGate() {
-        RunHandle handle = registry.start("a task", "fixture");
+        RunHandle handle = registry.start("a task", "fixture", RunStrategy.ORCHESTRATED);
         assertThat(handle.state().task()).isEqualTo("a task");
         assertThat(handle.state().runId()).isEqualTo(handle.runId());
         assertThat(handle.gate()).isNotNull();
@@ -80,8 +81,32 @@ class RunRegistryTest {
 
     @Test
     void aNonHttpsRepoIsRejectedSynchronouslyWithoutStartingAnyWork() {
-        assertThatThrownBy(() -> registry.start("task", "ext::sh -c \"true\""))
+        assertThatThrownBy(() -> registry.start("task", "ext::sh -c \"true\"", RunStrategy.ORCHESTRATED))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void directStrategyDispatchesToTheDirectExecutorNotTheOrchestrator() {
+        java.util.concurrent.atomic.AtomicBoolean directCalled = new java.util.concurrent.atomic.AtomicBoolean(false);
+        var events = new RunEventPublisher();
+        var orchestrator = new Orchestrator(new StubAgent("coder"), new StubAgent("reviewer"), new StubAgent("planner"),
+                (task, index) -> List.of(), (state, findings, reason) -> ScribeDraft.EMPTY,
+                new NoOpSkillStore(), new NoOpMemoryStore(),
+                events, 3, 5, Duration.ofMinutes(1), context -> PolicyResult.ok());
+        RunExecutor recordingDirectExecutor = (state, gate) -> {
+            directCalled.set(true);
+            return new Orchestrator.RunOutcome(true, "stub", state);
+        };
+        var directRegistry = new RunRegistry(orchestrator, recordingDirectExecutor, events, Executors.newCachedThreadPool(),
+                java.nio.file.Path.of("src/test/resources/fixture"), Duration.ofSeconds(2),
+                Duration.ofSeconds(2));
+
+        RunHandle handle = directRegistry.start("a task", "fixture", RunStrategy.DIRECT);
+        while (!handle.task().isDone()) {
+            try { Thread.sleep(5); } catch (InterruptedException e) { throw new RuntimeException(e); }
+        }
+
+        assertThat(directCalled.get()).isTrue();
     }
 
     @Test

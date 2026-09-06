@@ -7,6 +7,7 @@ import ai.devflow.orchestrator.ApprovalDecision;
 import ai.devflow.orchestrator.Gate;
 import ai.devflow.orchestrator.RunHandle;
 import ai.devflow.orchestrator.RunRegistry;
+import ai.devflow.orchestrator.RunStrategy;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -44,9 +45,11 @@ public class RunController {
         }
         String rawRepo = request.repo() == null ? "" : request.repo().trim();
         String repo = rawRepo.isBlank() ? "fixture" : rawRepo;
+        String rawStrategy = request.strategy() == null ? "" : request.strategy().trim();
+        RunStrategy strategy = "direct".equalsIgnoreCase(rawStrategy) ? RunStrategy.DIRECT : RunStrategy.ORCHESTRATED;
         RunHandle handle;
         try {
-            handle = registry.start(request.task().trim(), repo);
+            handle = registry.start(request.task().trim(), repo, strategy);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }

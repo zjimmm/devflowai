@@ -23,6 +23,7 @@ import java.util.concurrent.ExecutorService;
 public class RunRegistry {
 
     private final Orchestrator orchestrator;
+    private final RunExecutor directExecutor;
     private final RunEventPublisher events;
     private final ExecutorService executor;
     private final Path fixtureSource;
@@ -31,10 +32,11 @@ public class RunRegistry {
 
     private final Map<String, RunHandle> runs = new ConcurrentHashMap<>();
 
-    public RunRegistry(Orchestrator orchestrator, RunEventPublisher events,
+    public RunRegistry(Orchestrator orchestrator, RunExecutor directExecutor, RunEventPublisher events,
                        ExecutorService executor, Path fixtureSource, Duration gateTimeout,
                        Duration cloneTimeout) {
         this.orchestrator = orchestrator;
+        this.directExecutor = directExecutor;
         this.events = events;
         this.executor = executor;
         this.fixtureSource = fixtureSource;
@@ -54,7 +56,7 @@ public class RunRegistry {
      *             rather than an async failure event after the run has
      *             already been reported started.
      */
-    public RunHandle start(String task, String repo) {
+    public RunHandle start(String task, String repo, RunStrategy strategy) {
         String runId = UUID.randomUUID().toString().substring(0, 8);
         Workspace workspace;
         String repoSlug;
@@ -67,16 +69,17 @@ public class RunRegistry {
         }
         RunState state = new RunState(runId, task, workspace, repoSlug);
         ApprovalGate gate = new ApprovalGate(gateTimeout);
+        RunExecutor selectedExecutor = strategy == RunStrategy.DIRECT ? directExecutor : orchestrator;
 
         var future = executor.submit(() -> {
             try {
                 workspace.prepare();
-                orchestrator.run(state, gate);
+                selectedExecutor.run(state, gate);
             } catch (Exception e) {
                 state.setPhase(RunPhase.FAILED);
                 events.publish(runId, RunEvent.of("error",
                         "Could not prepare the workspace: " + e.getMessage(),
-                        Map.of("task", task, "repoSlug", repoSlug)));
+                        Map.of("task", task, "repoSlug", repoSlug, "strategy", strategy.name())));
                 // workspace.prepare() can throw partway through (e.g. after
                 // copying files but before git init completes), leaking a temp
                 // directory on disk. Orchestrator.run's own cleanup is never
