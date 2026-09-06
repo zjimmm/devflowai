@@ -31,7 +31,7 @@ import java.util.Map;
  * functions that never call each other. This class decides what runs next, and
  * holds only {@code AgentResult} records — never file contents or diffs.
  */
-public class Orchestrator {
+public class Orchestrator implements RunExecutor {
 
     public record RunOutcome(boolean approved, String reason, RunState state) {}
 
