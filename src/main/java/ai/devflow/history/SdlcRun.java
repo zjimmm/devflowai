@@ -24,7 +24,6 @@ public class SdlcRun {
     private String repoSlug;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
     private RunStrategy strategy;
 
     @Enumerated(EnumType.STRING)

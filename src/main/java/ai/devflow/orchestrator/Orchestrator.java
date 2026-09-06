@@ -88,7 +88,8 @@ public class Orchestrator implements RunExecutor {
         emit(state, "step", "Workspace ready — branch " + state.workspace().branchName(),
                 Map.of("branch", state.workspace().branchName(),
                        "task", state.task(),
-                       "repoSlug", state.repoSlug()));
+                       "repoSlug", state.repoSlug(),
+                       "strategy", RunStrategy.ORCHESTRATED.name()));
 
         loadKnowledge(state);
 
