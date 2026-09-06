@@ -32,13 +32,15 @@ first enforced policy check (`devflowai.policy.require-build-pass`, default
 
 Endpoints (the page uses these three and nothing else):
 
-    POST /api/runs                  {"task": "...", "repo": "fixture"} -> {"runId": "..."}
+    POST /api/runs                  {"task": "...", "repo": "fixture", "strategy": "orchestrated"|"direct"} -> {"runId": "..."}
     GET  /api/runs/{id}/stream      Server-Sent Events
     POST /api/runs/{id}/approve     {"approved": true|false, "reason": "..."|null}
 
 `repo` is `"fixture"` for the bundled fixture, or (Phase 6) an `https://` git
 URL to clone instead — see spec §4.1 for why that string is validated with a
 strict scheme allowlist before any git operation, not treated as a trusted URL.
+
+Evaluation Mode (spec: docs/superpowers/specs/2026-09-06-sdlc-evaluation-mode-design.md) adds a second, much simpler strategy: `"strategy": "direct"` skips the planner, reviewer, all three gates, and the policy engine entirely — it runs the coder once, then commits regardless of build outcome. This exists so an operator can compare the two strategies on the metrics devflowai already persists (see the past-runs table's Strategy/Build columns). The default, and what every pre-existing caller gets when `strategy` is omitted, is `"orchestrated"` (the pipeline described above).
 
 ## Non-negotiables
 

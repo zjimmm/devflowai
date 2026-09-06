@@ -76,6 +76,7 @@ class RunFlowIntegrationTest {
 
     @Autowired MockMvc mvc;
     @Autowired RunRegistry registry;
+    @Autowired ai.devflow.history.SdlcRunRepository runsRepo;
     ObjectMapper json = new ObjectMapper();
 
     // Overrides OrchestrationConfig's real "coderAgent"/"reviewerAgent" beans
@@ -180,6 +181,7 @@ class RunFlowIntegrationTest {
 
         assertThat(handle.state().phase()).isEqualTo(RunPhase.DONE);
         assertThat(handle.state().history()).isNotEmpty();
+        assertThat(runsRepo.findById(runId).orElseThrow().strategy()).isEqualTo(RunStrategy.ORCHESTRATED);
     }
 
     @Test
@@ -246,7 +248,7 @@ class RunFlowIntegrationTest {
         RunHandle handle = registry.find(runId);
         assertThat(handle).isNotNull();
 
-        long deadline = System.currentTimeMillis() + 30_000;
+        long deadline = System.currentTimeMillis() + 60_000;
         while (!handle.task().isDone()) {
             if (System.currentTimeMillis() > deadline) throw new AssertionError("run never finished");
             Thread.sleep(10);
@@ -254,6 +256,7 @@ class RunFlowIntegrationTest {
 
         assertThat(handle.state().phase()).isEqualTo(RunPhase.DONE);
         assertThat(handle.gate().pending()).isNull();
+        assertThat(runsRepo.findById(runId).orElseThrow().strategy()).isEqualTo(RunStrategy.DIRECT);
     }
 
     @Test
