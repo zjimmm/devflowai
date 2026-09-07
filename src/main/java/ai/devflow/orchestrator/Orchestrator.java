@@ -15,6 +15,8 @@ import ai.devflow.skill.ScribeDraft;
 import ai.devflow.skill.SkillIndexEntry;
 import ai.devflow.skill.SkillStore;
 import ai.devflow.tools.BuildTools;
+import ai.devflow.tools.GitHubClient;
+import ai.devflow.tools.GitHubClientException;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -47,11 +49,12 @@ public class Orchestrator implements RunExecutor {
     private final int maxHumanIterations;
     private final Duration buildTimeout;
     private final PolicyEngine policyEngine;
+    private final GitHubClient gitHubClient;
 
     public Orchestrator(Agent coder, Agent reviewer, Agent planner, SkillPicker skillPicker, Scribe scribe,
                         SkillStore skillStore, MemoryStore memoryStore,
                         RunEventPublisher events, int maxReviewIterations, int maxHumanIterations,
-                        Duration buildTimeout, PolicyEngine policyEngine) {
+                        Duration buildTimeout, PolicyEngine policyEngine, GitHubClient gitHubClient) {
         this.coder = coder;
         this.reviewer = reviewer;
         this.planner = planner;
@@ -64,6 +67,7 @@ public class Orchestrator implements RunExecutor {
         this.maxHumanIterations = maxHumanIterations;
         this.buildTimeout = buildTimeout;
         this.policyEngine = policyEngine;
+        this.gitHubClient = gitHubClient;
     }
 
     public RunOutcome run(RunState state, ApprovalGate gate) {
@@ -268,11 +272,36 @@ public class Orchestrator implements RunExecutor {
             String committed = state.gitTools().commit("devflowai: " + state.task());
             emit(state, "step", committed, Map.of());
 
+            String prUrl = null;
+            if (state.openPr()) {
+                state.setPhase(RunPhase.OPENING_PR);
+                try {
+                    gitHubClient.push(state.workspace(), state.workspace().branchName());
+                } catch (GitHubClientException e) {
+                    return failed(state, "Push failed: " + e.getMessage()
+                            + ". The commit was made locally but never reached the remote — it is now lost.");
+                }
+                try {
+                    var content = PullRequestContent.build(state, RunStrategy.ORCHESTRATED,
+                            build.success(), build.output());
+                    var result = gitHubClient.openPullRequest(
+                            state.workspace().repoUrl(), state.workspace().branchName(),
+                            content.title(), content.body());
+                    prUrl = result.url();
+                    emit(state, "step", "Pull request opened: " + prUrl, Map.of());
+                } catch (GitHubClientException e) {
+                    emit(state, "warn", "Branch pushed, but opening the PR failed: " + e.getMessage()
+                            + ". Open it manually from " + state.workspace().branchName() + ".", Map.of());
+                }
+            }
+
             state.setPhase(RunPhase.DONE);
-            emit(state, "done", "Approved and committed on " + state.workspace().branchName(),
-                    Map.of("branch", state.workspace().branchName(),
-                           "inputTokens", state.totalTokens().input(),
-                           "outputTokens", state.totalTokens().output()));
+            Map<String, Object> doneData = new HashMap<>();
+            doneData.put("branch", state.workspace().branchName());
+            doneData.put("inputTokens", state.totalTokens().input());
+            doneData.put("outputTokens", state.totalTokens().output());
+            if (prUrl != null) doneData.put("prUrl", prUrl);
+            emit(state, "done", "Approved and committed on " + state.workspace().branchName(), doneData);
             String outcomeReason = draftDeclinedByBareRejection
                     ? "Committed by operator; declined the proposed lesson"
                     : "Approved by reviewer and operator";

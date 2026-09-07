@@ -34,6 +34,11 @@ public class ClonedWorkspace extends AbstractGitWorkspace {
     }
 
     @Override
+    public String repoUrl() {
+        return repoUrl;
+    }
+
+    @Override
     public void prepare() throws IOException {
         root = Files.createTempDirectory("devflowai-" + runId + "-");
         try (Git git = Git.cloneRepository()
