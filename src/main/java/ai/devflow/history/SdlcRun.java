@@ -42,6 +42,7 @@ public class SdlcRun {
     private long outputTokens;
 
     private Boolean buildSucceeded;
+    private String prUrl;
 
     protected SdlcRun() {} // JPA
 
@@ -65,6 +66,7 @@ public class SdlcRun {
     public long inputTokens() { return inputTokens; }
     public long outputTokens() { return outputTokens; }
     public Boolean buildSucceeded() { return buildSucceeded; }
+    public String prUrl() { return prUrl; }
 
     public void finish(SdlcRunStatus status, String reason, Instant finishedAt, long inputTokens, long outputTokens) {
         this.status = status;
@@ -76,5 +78,9 @@ public class SdlcRun {
 
     public void recordBuildResult(boolean succeeded) {
         this.buildSucceeded = succeeded;
+    }
+
+    public void recordPrUrl(String prUrl) {
+        this.prUrl = prUrl;
     }
 }

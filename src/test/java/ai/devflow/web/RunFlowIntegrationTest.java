@@ -275,6 +275,29 @@ class RunFlowIntegrationTest {
 
     @Test
     @Tag("live")
+    void anOpenPrRunPushesAndOpensAPrAgainstTheRealClone() throws Exception {
+        String body = mvc.perform(post("/api/runs")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(new StartRunRequest(
+                                "add a class", "https://github.com/zjimmm/devflowai.git", "direct", true))))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String runId = json.readTree(body).get("runId").asText();
+        RunHandle handle = registry.find(runId);
+        assertThat(handle).isNotNull();
+
+        long deadline = System.currentTimeMillis() + 120_000;
+        while (!handle.task().isDone()) {
+            if (System.currentTimeMillis() > deadline) throw new AssertionError("run never finished");
+            Thread.sleep(10);
+        }
+
+        assertThat(handle.state().phase()).isEqualTo(RunPhase.DONE);
+        assertThat(runsRepo.findById(runId).orElseThrow().prUrl()).isNotNull();
+    }
+
+    @Test
+    @Tag("live")
     void aClonedRepoFlowsThroughGate1AndAbortsCleanlyAtGate2() throws Exception {
         String body = mvc.perform(post("/api/runs")
                         .contentType(MediaType.APPLICATION_JSON)
