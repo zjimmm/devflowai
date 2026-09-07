@@ -663,9 +663,9 @@ class OrchestratorTest {
                 new FakeSkillStore(), new FakeMemoryStore(),
                 recordingEvents, 3, 5, Duration.ofMinutes(1), policyEngine, fakeClient);
         var state = new RunState("pr1", "t", workspace, "fixture", true);
-        var gate = fullyApprovingGate();
+        var gate = new ApprovalGate(Duration.ofSeconds(10));
 
-        var outcome = orchestrator.run(state, gate);
+        var outcome = runApprovingAll(orchestrator, state, gate);
 
         assertThat(outcome.approved()).isTrue();
         assertThat(pushed.get()).isEqualTo(1);
@@ -690,9 +690,9 @@ class OrchestratorTest {
                 new FakeSkillStore(), new FakeMemoryStore(),
                 events, 3, 5, Duration.ofMinutes(1), policyEngine, failingClient);
         var state = new RunState("pr2", "t", workspace, "fixture", true);
-        var gate = fullyApprovingGate();
+        var gate = new ApprovalGate(Duration.ofSeconds(10));
 
-        var outcome = orchestrator.run(state, gate);
+        var outcome = runApprovingAll(orchestrator, state, gate);
 
         assertThat(outcome.approved()).isFalse();
         assertThat(outcome.reason()).contains("Push failed").contains("now lost");
@@ -714,9 +714,9 @@ class OrchestratorTest {
                 new FakeSkillStore(), new FakeMemoryStore(),
                 recordingEvents, 3, 5, Duration.ofMinutes(1), policyEngine, pushOnlyClient);
         var state = new RunState("pr3", "t", workspace, "fixture", true);
-        var gate = fullyApprovingGate();
+        var gate = new ApprovalGate(Duration.ofSeconds(10));
 
-        var outcome = orchestrator.run(state, gate);
+        var outcome = runApprovingAll(orchestrator, state, gate);
 
         assertThat(outcome.approved()).isTrue();
         var events = recordedEvents(captured);
@@ -743,17 +743,5 @@ class OrchestratorTest {
                 return AgentResult.ok("reviewer", "looks good", List.of(), TokenUsage.NONE);
             }
         };
-    }
-
-    private ApprovalGate fullyApprovingGate() {
-        var gate = new ApprovalGate(Duration.ofSeconds(10));
-        var approver = Executors.newSingleThreadExecutor();
-        approver.submit(() -> {
-            while (true) {
-                if (gate.pending() != null) gate.decide(ApprovalDecision.approve());
-                try { Thread.sleep(2); } catch (InterruptedException e) { return; }
-            }
-        });
-        return gate;
     }
 }

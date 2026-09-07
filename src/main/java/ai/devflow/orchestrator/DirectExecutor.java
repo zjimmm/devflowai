@@ -98,7 +98,7 @@ public class DirectExecutor implements RunExecutor {
                         content.title(), content.body());
                 prUrl = result.url();
                 emit(state, "step", "Pull request opened: " + prUrl, Map.of());
-            } catch (GitHubClientException e) {
+            } catch (GitHubClientException | RuntimeException e) {
                 emit(state, "warn", "Branch pushed, but opening the PR failed: " + e.getMessage()
                         + ". Open it manually from " + state.workspace().branchName() + ".", Map.of());
             }
