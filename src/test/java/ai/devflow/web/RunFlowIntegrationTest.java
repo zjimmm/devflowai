@@ -100,6 +100,9 @@ class RunFlowIntegrationTest {
     @TestBean(name = "memoryStore", methodName = "stubMemoryStore")
     MemoryStore memoryStoreOverride;
 
+    @TestBean(name = "gitHubClient", methodName = "stubGitHubClient")
+    ai.devflow.tools.GitHubClient gitHubClientOverride;
+
     /** Writes a real file so changedFiles() is non-empty, like a real coder. */
     static Agent stubCoderAgent() {
         return new Agent() {
@@ -152,6 +155,17 @@ class RunFlowIntegrationTest {
 
     static MemoryStore stubMemoryStore() throws java.io.IOException {
         return new FileMemoryStore(Files.createTempDirectory("memory-test"));
+    }
+
+    static ai.devflow.tools.GitHubClient stubGitHubClient() {
+        return new ai.devflow.tools.GitHubClient() {
+            @Override public void push(ai.devflow.workspace.Workspace workspace, String branchName) { }
+
+            @Override public ai.devflow.tools.PullRequestResult openPullRequest(
+                    String repoUrl, String branchName, String title, String body) {
+                return new ai.devflow.tools.PullRequestResult("https://github.com/" + repoUrl + "/pull/1", 1);
+            }
+        };
     }
 
     @Test

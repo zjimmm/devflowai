@@ -8,6 +8,8 @@ import ai.devflow.skill.ScribeDraft;
 import ai.devflow.skill.SkillDraft;
 import ai.devflow.skill.SkillIndexEntry;
 import ai.devflow.skill.SkillStore;
+import ai.devflow.tools.GitHubClient;
+import ai.devflow.tools.PullRequestResult;
 import org.junit.jupiter.api.*;
 
 import java.time.Duration;
@@ -42,13 +44,25 @@ class RunRegistryTest {
         @Override public String append(String repoSlug, String fact) { return ""; }
     }
 
+    static GitHubClient stubGitHubClient() {
+        return new GitHubClient() {
+            @Override public void push(ai.devflow.workspace.Workspace workspace, String branchName) {
+                throw new UnsupportedOperationException("no test in this file expects a push");
+            }
+
+            @Override public PullRequestResult openPullRequest(String repoUrl, String branchName, String title, String body) {
+                throw new UnsupportedOperationException("no test in this file expects a PR");
+            }
+        };
+    }
+
     @BeforeEach
     void setUp() {
         var events = new RunEventPublisher();
         var orchestrator = new Orchestrator(new StubAgent("coder"), new StubAgent("reviewer"), new StubAgent("planner"),
                 (task, index) -> List.of(), (state, findings, reason) -> ScribeDraft.EMPTY,
                 new NoOpSkillStore(), new NoOpMemoryStore(),
-                events, 3, 5, Duration.ofMinutes(1), context -> PolicyResult.ok());
+                events, 3, 5, Duration.ofMinutes(1), context -> PolicyResult.ok(), stubGitHubClient());
         RunExecutor stubDirectExecutor = (state, gate) -> new Orchestrator.RunOutcome(true, "stub", state);
         registry = new RunRegistry(orchestrator, stubDirectExecutor, events, Executors.newCachedThreadPool(),
                 java.nio.file.Path.of("src/test/resources/fixture"), Duration.ofSeconds(2),
@@ -57,8 +71,8 @@ class RunRegistryTest {
 
     @Test
     void startingARunGivesItAUniqueIdAndRegistersIt() {
-        RunHandle a = registry.start("task one", "fixture", RunStrategy.ORCHESTRATED);
-        RunHandle b = registry.start("task two", "fixture", RunStrategy.ORCHESTRATED);
+        RunHandle a = registry.start("task one", "fixture", RunStrategy.ORCHESTRATED, false);
+        RunHandle b = registry.start("task two", "fixture", RunStrategy.ORCHESTRATED, false);
 
         assertThat(a.runId()).isNotBlank();
         assertThat(b.runId()).isNotEqualTo(a.runId());
@@ -73,7 +87,7 @@ class RunRegistryTest {
 
     @Test
     void theHandleExposesTheRunsStateAndGate() {
-        RunHandle handle = registry.start("a task", "fixture", RunStrategy.ORCHESTRATED);
+        RunHandle handle = registry.start("a task", "fixture", RunStrategy.ORCHESTRATED, false);
         assertThat(handle.state().task()).isEqualTo("a task");
         assertThat(handle.state().runId()).isEqualTo(handle.runId());
         assertThat(handle.gate()).isNotNull();
@@ -81,7 +95,7 @@ class RunRegistryTest {
 
     @Test
     void aNonHttpsRepoIsRejectedSynchronouslyWithoutStartingAnyWork() {
-        assertThatThrownBy(() -> registry.start("task", "ext::sh -c \"true\"", RunStrategy.ORCHESTRATED))
+        assertThatThrownBy(() -> registry.start("task", "ext::sh -c \"true\"", RunStrategy.ORCHESTRATED, false))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -92,7 +106,7 @@ class RunRegistryTest {
         var orchestrator = new Orchestrator(new StubAgent("coder"), new StubAgent("reviewer"), new StubAgent("planner"),
                 (task, index) -> List.of(), (state, findings, reason) -> ScribeDraft.EMPTY,
                 new NoOpSkillStore(), new NoOpMemoryStore(),
-                events, 3, 5, Duration.ofMinutes(1), context -> PolicyResult.ok());
+                events, 3, 5, Duration.ofMinutes(1), context -> PolicyResult.ok(), stubGitHubClient());
         RunExecutor recordingDirectExecutor = (state, gate) -> {
             directCalled.set(true);
             return new Orchestrator.RunOutcome(true, "stub", state);
@@ -101,7 +115,7 @@ class RunRegistryTest {
                 java.nio.file.Path.of("src/test/resources/fixture"), Duration.ofSeconds(2),
                 Duration.ofSeconds(2));
 
-        RunHandle handle = directRegistry.start("a task", "fixture", RunStrategy.DIRECT);
+        RunHandle handle = directRegistry.start("a task", "fixture", RunStrategy.DIRECT, false);
         while (!handle.task().isDone()) {
             try { Thread.sleep(5); } catch (InterruptedException e) { throw new RuntimeException(e); }
         }

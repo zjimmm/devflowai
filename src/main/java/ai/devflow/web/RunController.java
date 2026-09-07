@@ -47,9 +47,20 @@ public class RunController {
         String repo = rawRepo.isBlank() ? "fixture" : rawRepo;
         String rawStrategy = request.strategy() == null ? "" : request.strategy().trim();
         RunStrategy strategy = "direct".equalsIgnoreCase(rawStrategy) ? RunStrategy.DIRECT : RunStrategy.ORCHESTRATED;
+        boolean openPr = Boolean.TRUE.equals(request.openPr());
+        if (openPr) {
+            if ("fixture".equals(repo)) {
+                return ResponseEntity.badRequest().body(
+                        Map.of("error", "Opening a PR requires a real repository, not the bundled fixture"));
+            }
+            if (!repo.startsWith("https://github.com/")) {
+                return ResponseEntity.badRequest().body(
+                        Map.of("error", "Opening a PR is only supported for github.com repositories, got: " + repo));
+            }
+        }
         RunHandle handle;
         try {
-            handle = registry.start(request.task().trim(), repo, strategy);
+            handle = registry.start(request.task().trim(), repo, strategy, openPr);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
