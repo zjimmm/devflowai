@@ -5,6 +5,8 @@ import ai.devflow.agent.AgentResult;
 import ai.devflow.event.RunEvent;
 import ai.devflow.event.RunEventPublisher;
 import ai.devflow.tools.BuildTools;
+import ai.devflow.tools.GitHubClient;
+import ai.devflow.tools.GitHubClientException;
 
 import java.time.Duration;
 import java.util.HashMap;
@@ -23,11 +25,13 @@ public class DirectExecutor implements RunExecutor {
     private final Agent coder;
     private final RunEventPublisher events;
     private final Duration buildTimeout;
+    private final GitHubClient gitHubClient;
 
-    public DirectExecutor(Agent coder, RunEventPublisher events, Duration buildTimeout) {
+    public DirectExecutor(Agent coder, RunEventPublisher events, Duration buildTimeout, GitHubClient gitHubClient) {
         this.coder = coder;
         this.events = events;
         this.buildTimeout = buildTimeout;
+        this.gitHubClient = gitHubClient;
     }
 
     @Override
@@ -78,11 +82,35 @@ public class DirectExecutor implements RunExecutor {
         String committed = state.gitTools().commit("devflowai (direct): " + state.task());
         emit(state, "step", committed, Map.of());
 
+        String prUrl = null;
+        if (state.openPr()) {
+            state.setPhase(RunPhase.OPENING_PR);
+            try {
+                gitHubClient.push(state.workspace(), state.workspace().branchName());
+            } catch (GitHubClientException e) {
+                return failed(state, "Push failed: " + e.getMessage()
+                        + ". The commit was made locally but never reached the remote — it is now lost.");
+            }
+            try {
+                var content = PullRequestContent.build(state, RunStrategy.DIRECT, build.success(), build.output());
+                var result = gitHubClient.openPullRequest(
+                        state.workspace().repoUrl(), state.workspace().branchName(),
+                        content.title(), content.body());
+                prUrl = result.url();
+                emit(state, "step", "Pull request opened: " + prUrl, Map.of());
+            } catch (GitHubClientException | RuntimeException e) {
+                emit(state, "warn", "Branch pushed, but opening the PR failed: " + e.getMessage()
+                        + ". Open it manually from " + state.workspace().branchName() + ".", Map.of());
+            }
+        }
+
         state.setPhase(RunPhase.DONE);
-        emit(state, "done", "Direct run committed on " + state.workspace().branchName(),
-                Map.of("branch", state.workspace().branchName(),
-                       "inputTokens", state.totalTokens().input(),
-                       "outputTokens", state.totalTokens().output()));
+        Map<String, Object> doneData = new HashMap<>();
+        doneData.put("branch", state.workspace().branchName());
+        doneData.put("inputTokens", state.totalTokens().input());
+        doneData.put("outputTokens", state.totalTokens().output());
+        if (prUrl != null) doneData.put("prUrl", prUrl);
+        emit(state, "done", "Direct run committed on " + state.workspace().branchName(), doneData);
         return new Orchestrator.RunOutcome(true, "Direct run committed, no review", state);
     }
 

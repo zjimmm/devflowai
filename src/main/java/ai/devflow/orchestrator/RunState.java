@@ -25,6 +25,7 @@ public class RunState {
     private final String task;
     private final Workspace workspace;
     private final String repoSlug;
+    private final boolean openPr;
     private final GitTools gitTools;
 
     private final List<AgentResult> history = new ArrayList<>();
@@ -45,10 +46,15 @@ public class RunState {
     }
 
     public RunState(String runId, String task, Workspace workspace, String repoSlug) {
+        this(runId, task, workspace, repoSlug, false);
+    }
+
+    public RunState(String runId, String task, Workspace workspace, String repoSlug, boolean openPr) {
         this.runId = runId;
         this.task = task;
         this.workspace = workspace;
         this.repoSlug = repoSlug;
+        this.openPr = openPr;
         // Bound to THIS run's workspace, created once. Agents read tools from
         // here rather than holding their own, so agents stay stateless and are
         // safe to register as singleton beans (Phase 3 finding I3).
@@ -59,6 +65,7 @@ public class RunState {
     public String task() { return task; }
     public Workspace workspace() { return workspace; }
     public String repoSlug() { return repoSlug; }
+    public boolean openPr() { return openPr; }
     public GitTools gitTools() { return gitTools; }
 
     public synchronized List<AgentResult> history() { return List.copyOf(history); }

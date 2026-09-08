@@ -16,6 +16,7 @@ import java.util.concurrent.Executors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -47,7 +48,7 @@ class RunControllerTest {
 
     @Test
     void startingARunReturnsItsId() throws Exception {
-        when(registry.start(any(), any(), any())).thenReturn(handleFor("abc123"));
+        when(registry.start(any(), any(), any(), anyBoolean())).thenReturn(handleFor("abc123"));
 
         mvc.perform(post("/api/runs")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -55,7 +56,7 @@ class RunControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.runId").value("abc123"));
 
-        verify(registry).start("do a thing", "fixture", RunStrategy.ORCHESTRATED);
+        verify(registry).start("do a thing", "fixture", RunStrategy.ORCHESTRATED, false);
     }
 
     @Test
@@ -70,7 +71,7 @@ class RunControllerTest {
 
     @Test
     void startingARunRejectsARepoStringThatIsNotAnHttpsUrl() throws Exception {
-        when(registry.start(any(), any(), any()))
+        when(registry.start(any(), any(), any(), anyBoolean()))
                 .thenThrow(new IllegalArgumentException("Repo must be an https:// URL, got: ext::sh -c \"true\""));
 
         mvc.perform(post("/api/runs")
@@ -82,14 +83,51 @@ class RunControllerTest {
 
     @Test
     void startingARunWithDirectStrategyPassesItThrough() throws Exception {
-        when(registry.start(any(), any(), any())).thenReturn(handleFor("direct1"));
+        when(registry.start(any(), any(), any(), anyBoolean())).thenReturn(handleFor("direct1"));
 
         mvc.perform(post("/api/runs")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json.writeValueAsString(new StartRunRequest("do a thing", "fixture", "direct"))))
                 .andExpect(status().isOk());
 
-        verify(registry).start("do a thing", "fixture", RunStrategy.DIRECT);
+        verify(registry).start("do a thing", "fixture", RunStrategy.DIRECT, false);
+    }
+
+    @Test
+    void startingARunWithOpenPrAgainstTheFixtureIsRejected() throws Exception {
+        mvc.perform(post("/api/runs")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(new StartRunRequest("do a thing", "fixture", "direct", true))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("Opening a PR requires a real repository, not the bundled fixture"));
+
+        verifyNoInteractions(registry);
+    }
+
+    @Test
+    void startingARunWithOpenPrAgainstANonGitHubUrlIsRejected() throws Exception {
+        mvc.perform(post("/api/runs")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(
+                                new StartRunRequest("do a thing", "https://gitlab.com/o/r", "direct", true))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value(
+                        "Opening a PR is only supported for github.com repositories, got: https://gitlab.com/o/r"));
+
+        verifyNoInteractions(registry);
+    }
+
+    @Test
+    void startingARunWithOpenPrAgainstAGitHubUrlPassesItThrough() throws Exception {
+        when(registry.start(any(), any(), any(), anyBoolean())).thenReturn(handleFor("pr1"));
+
+        mvc.perform(post("/api/runs")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(
+                                new StartRunRequest("do a thing", "https://github.com/o/r", "direct", true))))
+                .andExpect(status().isOk());
+
+        verify(registry).start("do a thing", "https://github.com/o/r", RunStrategy.DIRECT, true);
     }
 
     @Test

@@ -56,7 +56,7 @@ public class RunRegistry {
      *             rather than an async failure event after the run has
      *             already been reported started.
      */
-    public RunHandle start(String task, String repo, RunStrategy strategy) {
+    public RunHandle start(String task, String repo, RunStrategy strategy, boolean openPr) {
         String runId = UUID.randomUUID().toString().substring(0, 8);
         Workspace workspace;
         String repoSlug;
@@ -67,7 +67,7 @@ public class RunRegistry {
             workspace = new ClonedWorkspace(repo, runId, cloneTimeout);
             repoSlug = Slug.of(normalizeRepoUrl(repo));
         }
-        RunState state = new RunState(runId, task, workspace, repoSlug);
+        RunState state = new RunState(runId, task, workspace, repoSlug, openPr);
         ApprovalGate gate = new ApprovalGate(gateTimeout);
         RunExecutor selectedExecutor = strategy == RunStrategy.DIRECT ? directExecutor : orchestrator;
 

@@ -65,6 +65,27 @@ class SdlcRunRecorderTest {
     }
 
     @Test
+    void aDoneEventWithAPrUrlRecordsIt() {
+        recorder.onRunRecorded(new RunRecorded("r13", new RunEvent("step", "start",
+                Map.of("task", "t", "repoSlug", "fixture", "phase", "PREPARING", "strategy", "ORCHESTRATED"))));
+
+        recorder.onRunRecorded(new RunRecorded("r13", new RunEvent("done", "done",
+                Map.of("phase", "DONE", "prUrl", "https://github.com/o/r/pull/3"))));
+
+        assertThat(runs.findById("r13").orElseThrow().prUrl()).isEqualTo("https://github.com/o/r/pull/3");
+    }
+
+    @Test
+    void aDoneEventWithNoPrUrlLeavesItNull() {
+        recorder.onRunRecorded(new RunRecorded("r14", new RunEvent("step", "start",
+                Map.of("task", "t", "repoSlug", "fixture", "phase", "PREPARING", "strategy", "DIRECT"))));
+
+        recorder.onRunRecorded(new RunRecorded("r14", new RunEvent("done", "done", Map.of("phase", "DONE"))));
+
+        assertThat(runs.findById("r14").orElseThrow().prUrl()).isNull();
+    }
+
+    @Test
     void aStartEventIsIdempotentIfSeenTwice() {
         var start = new RunRecorded("r2", new RunEvent("step", "Workspace ready", Map.of(
                 "task", "t", "repoSlug", "fixture", "phase", "PREPARING", "strategy", "ORCHESTRATED")));

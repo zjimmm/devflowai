@@ -5,6 +5,9 @@ import ai.devflow.event.RunEventPublisher;
 import ai.devflow.memory.MemoryStore;
 import ai.devflow.policy.*;
 import ai.devflow.skill.*;
+import ai.devflow.tools.GitHubClient;
+import ai.devflow.tools.GitHubClientException;
+import ai.devflow.tools.PullRequestResult;
 import ai.devflow.workspace.*;
 import org.junit.jupiter.api.*;
 
@@ -27,6 +30,7 @@ class OrchestratorTest {
     ExecutorService pool;
     Agent planner = defaultPlanner();
     PolicyEngine policyEngine = defaultPolicyEngine();
+    GitHubClient gitHubClient = defaultGitHubClient();
 
     @BeforeEach
     void setUp() throws Exception {
@@ -67,6 +71,17 @@ class OrchestratorTest {
 
     static PolicyEngine defaultPolicyEngine() {
         return context -> PolicyResult.ok();
+    }
+
+    static GitHubClient defaultGitHubClient() {
+        return new GitHubClient() {
+            @Override public void push(ai.devflow.workspace.Workspace workspace, String branchName) {
+                throw new UnsupportedOperationException("no test using this default expects a push");
+            }
+            @Override public PullRequestResult openPullRequest(String repoUrl, String branchName, String title, String body) {
+                throw new UnsupportedOperationException("no test using this default expects a PR");
+            }
+        };
     }
 
     /** Throws on every call — stands in for a 429 or a dropped connection. */
@@ -127,7 +142,7 @@ class OrchestratorTest {
     private Orchestrator orchestrator(Agent coder, Agent reviewer, SkillPicker picker, Scribe scribe,
                                       SkillStore skillStore, MemoryStore memoryStore) {
         return new Orchestrator(coder, reviewer, planner, picker, scribe, skillStore, memoryStore,
-                events, 3, 5, Duration.ofMinutes(1), policyEngine);
+                events, 3, 5, Duration.ofMinutes(1), policyEngine, gitHubClient);
     }
 
     /** Writes a real file so changedFiles() is non-empty, as a real coder would. */
@@ -628,5 +643,105 @@ class OrchestratorTest {
         assertThat(outcome.reason())
                 .as("a policy-driven cap-out must say so, not blame the review loop generically")
                 .contains("policy");
+    }
+
+    @Test
+    void openPrPushesThenOpensAPrAndTheDoneEventCarriesItsUrl() throws Exception {
+        var captured = new ArrayList<Object>();
+        var recordingEvents = new RunEventPublisher(captured::add);
+        var pushed = new AtomicInteger(0);
+        GitHubClient fakeClient = new GitHubClient() {
+            @Override public void push(ai.devflow.workspace.Workspace workspace, String branchName) {
+                pushed.incrementAndGet();
+            }
+            @Override public PullRequestResult openPullRequest(String repoUrl, String branchName, String title, String body) {
+                return new PullRequestResult("https://github.com/o/r/pull/7", 7);
+            }
+        };
+        var orchestrator = new Orchestrator(writingCoder("done"), okReviewer(), planner,
+                (task, index) -> List.of(), (state, findings, reason) -> ScribeDraft.EMPTY,
+                new FakeSkillStore(), new FakeMemoryStore(),
+                recordingEvents, 3, 5, Duration.ofMinutes(1), policyEngine, fakeClient);
+        var state = new RunState("pr1", "t", workspace, "fixture", true);
+        var gate = new ApprovalGate(Duration.ofSeconds(10));
+
+        var outcome = runApprovingAll(orchestrator, state, gate);
+
+        assertThat(outcome.approved()).isTrue();
+        assertThat(pushed.get()).isEqualTo(1);
+        var doneEvent = recordedEvents(captured).stream()
+                .filter(e -> "done".equals(e.type()))
+                .findFirst().orElseThrow();
+        assertThat(doneEvent.data()).containsEntry("prUrl", "https://github.com/o/r/pull/7");
+    }
+
+    @Test
+    void aPushFailureIsReportedAsALostCommitAndTheRunFails() throws Exception {
+        GitHubClient failingClient = new GitHubClient() {
+            @Override public void push(ai.devflow.workspace.Workspace workspace, String branchName) throws GitHubClientException {
+                throw new GitHubClientException("network unreachable");
+            }
+            @Override public PullRequestResult openPullRequest(String repoUrl, String branchName, String title, String body) {
+                throw new UnsupportedOperationException("push already failed");
+            }
+        };
+        var orchestrator = new Orchestrator(writingCoder("done"), okReviewer(), planner,
+                (task, index) -> List.of(), (state, findings, reason) -> ScribeDraft.EMPTY,
+                new FakeSkillStore(), new FakeMemoryStore(),
+                events, 3, 5, Duration.ofMinutes(1), policyEngine, failingClient);
+        var state = new RunState("pr2", "t", workspace, "fixture", true);
+        var gate = new ApprovalGate(Duration.ofSeconds(10));
+
+        var outcome = runApprovingAll(orchestrator, state, gate);
+
+        assertThat(outcome.approved()).isFalse();
+        assertThat(outcome.reason()).contains("Push failed").contains("now lost");
+    }
+
+    @Test
+    void aPrCreationFailureStillEndsTheRunDone() throws Exception {
+        var captured = new ArrayList<Object>();
+        var recordingEvents = new RunEventPublisher(captured::add);
+        GitHubClient pushOnlyClient = new GitHubClient() {
+            @Override public void push(ai.devflow.workspace.Workspace workspace, String branchName) { }
+            @Override public PullRequestResult openPullRequest(String repoUrl, String branchName, String title, String body)
+                    throws GitHubClientException {
+                throw new GitHubClientException("insufficient permissions");
+            }
+        };
+        var orchestrator = new Orchestrator(writingCoder("done"), okReviewer(), planner,
+                (task, index) -> List.of(), (state, findings, reason) -> ScribeDraft.EMPTY,
+                new FakeSkillStore(), new FakeMemoryStore(),
+                recordingEvents, 3, 5, Duration.ofMinutes(1), policyEngine, pushOnlyClient);
+        var state = new RunState("pr3", "t", workspace, "fixture", true);
+        var gate = new ApprovalGate(Duration.ofSeconds(10));
+
+        var outcome = runApprovingAll(orchestrator, state, gate);
+
+        assertThat(outcome.approved()).isTrue();
+        var events = recordedEvents(captured);
+        var doneEvent = events.stream()
+                .filter(e -> "done".equals(e.type()))
+                .findFirst().orElseThrow();
+        assertThat(doneEvent.data()).doesNotContainKey("prUrl");
+        assertThat(events.stream().anyMatch(e ->
+                "warn".equals(e.type()) && e.message().contains("Open it manually"))).isTrue();
+    }
+
+    private List<ai.devflow.event.RunEvent> recordedEvents(List<Object> captured) {
+        return captured.stream()
+                .filter(ai.devflow.event.RunRecorded.class::isInstance)
+                .map(ai.devflow.event.RunRecorded.class::cast)
+                .map(ai.devflow.event.RunRecorded::event)
+                .toList();
+    }
+
+    private Agent okReviewer() {
+        return new Agent() {
+            @Override public String name() { return "reviewer"; }
+            @Override public AgentResult run(RunState s) {
+                return AgentResult.ok("reviewer", "looks good", List.of(), TokenUsage.NONE);
+            }
+        };
     }
 }

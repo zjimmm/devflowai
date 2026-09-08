@@ -71,6 +71,12 @@
         <option value="direct">Direct (single coder pass, no review)</option>
       </select>
     </div>
+    <div class="row">
+      <label style="display:flex; align-items:center; gap:0.5rem;">
+        <input id="open-pr" type="checkbox" style="width:auto;">
+        Open a pull request when done (requires a real repo, not the bundled fixture)
+      </label>
+    </div>
     <button id="run" class="primary">Run</button>
   </section>
 
@@ -103,6 +109,7 @@
           <th>Strategy</th>
           <th>Status</th>
           <th>Build</th>
+          <th>PR</th>
           <th>Started</th>
         </tr>
       </thead>
@@ -132,6 +139,17 @@
       cost.className = 'files'; // reuse the existing muted-text style
       cost.textContent = `${data.inputTokens || 0} input tokens · ${data.outputTokens || 0} output tokens`;
       el.appendChild(cost);
+    }
+    if (data && data.prUrl) {
+      const pr = document.createElement('div');
+      pr.className = 'files';
+      const link = document.createElement('a');
+      link.href = data.prUrl;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = 'View pull request';
+      pr.appendChild(link);
+      el.appendChild(pr);
     }
     $('log').appendChild(el);
     el.scrollIntoView({ block: 'nearest' });
@@ -217,7 +235,7 @@
     const res = await fetch('/api/runs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ task, repo, strategy: $('strategy').value })
+      body: JSON.stringify({ task, repo, strategy: $('strategy').value, openPr: $('open-pr').checked })
     });
     if (!res.ok) {
       log('error', `Could not start the run (HTTP ${res.status})`);
@@ -262,6 +280,16 @@
       const buildCell = document.createElement('td');
       buildCell.textContent = r.buildSucceeded === true ? 'passed' : r.buildSucceeded === false ? 'failed' : '';
 
+      const prCell = document.createElement('td');
+      if (r.prUrl) {
+        const prLink = document.createElement('a');
+        prLink.href = r.prUrl;
+        prLink.target = '_blank';
+        prLink.rel = 'noopener noreferrer';
+        prLink.textContent = 'PR';
+        prCell.appendChild(prLink);
+      }
+
       const startedCell = document.createElement('td');
       startedCell.textContent = new Date(r.startedAt).toLocaleString();
 
@@ -269,6 +297,7 @@
       tr.appendChild(strategyCell);
       tr.appendChild(statusCell);
       tr.appendChild(buildCell);
+      tr.appendChild(prCell);
       tr.appendChild(startedCell);
       body.appendChild(tr);
     });

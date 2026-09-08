@@ -31,6 +31,7 @@ abstract class AbstractGitWorkspace implements Workspace {
     @Override public Path root() { return root; }
     @Override public String branchName() { return "devflowai/" + runId; }
     @Override public PathGuard guard() { return guard; }
+    @Override public String repoUrl() { return null; }
 
     @Override
     public void cleanup() throws IOException {

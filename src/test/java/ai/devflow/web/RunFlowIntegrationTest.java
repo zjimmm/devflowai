@@ -100,6 +100,9 @@ class RunFlowIntegrationTest {
     @TestBean(name = "memoryStore", methodName = "stubMemoryStore")
     MemoryStore memoryStoreOverride;
 
+    @TestBean(name = "gitHubClient", methodName = "stubGitHubClient")
+    ai.devflow.tools.GitHubClient gitHubClientOverride;
+
     /** Writes a real file so changedFiles() is non-empty, like a real coder. */
     static Agent stubCoderAgent() {
         return new Agent() {
@@ -152,6 +155,17 @@ class RunFlowIntegrationTest {
 
     static MemoryStore stubMemoryStore() throws java.io.IOException {
         return new FileMemoryStore(Files.createTempDirectory("memory-test"));
+    }
+
+    static ai.devflow.tools.GitHubClient stubGitHubClient() {
+        return new ai.devflow.tools.GitHubClient() {
+            @Override public void push(ai.devflow.workspace.Workspace workspace, String branchName) { }
+
+            @Override public ai.devflow.tools.PullRequestResult openPullRequest(
+                    String repoUrl, String branchName, String title, String body) {
+                return new ai.devflow.tools.PullRequestResult("https://github.com/" + repoUrl + "/pull/1", 1);
+            }
+        };
     }
 
     @Test
@@ -257,6 +271,29 @@ class RunFlowIntegrationTest {
         assertThat(handle.state().phase()).isEqualTo(RunPhase.DONE);
         assertThat(handle.gate().pending()).isNull();
         assertThat(runsRepo.findById(runId).orElseThrow().strategy()).isEqualTo(RunStrategy.DIRECT);
+    }
+
+    @Test
+    @Tag("live")
+    void anOpenPrRunPushesAndOpensAPrAgainstTheRealClone() throws Exception {
+        String body = mvc.perform(post("/api/runs")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(new StartRunRequest(
+                                "add a class", "https://github.com/zjimmm/devflowai.git", "direct", true))))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String runId = json.readTree(body).get("runId").asText();
+        RunHandle handle = registry.find(runId);
+        assertThat(handle).isNotNull();
+
+        long deadline = System.currentTimeMillis() + 120_000;
+        while (!handle.task().isDone()) {
+            if (System.currentTimeMillis() > deadline) throw new AssertionError("run never finished");
+            Thread.sleep(10);
+        }
+
+        assertThat(handle.state().phase()).isEqualTo(RunPhase.DONE);
+        assertThat(runsRepo.findById(runId).orElseThrow().prUrl()).isNotNull();
     }
 
     @Test

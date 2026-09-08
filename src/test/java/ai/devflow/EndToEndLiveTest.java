@@ -44,7 +44,15 @@ class EndToEndLiveTest {
                     },
                     new ai.devflow.event.RunEventPublisher(),
                     3, 5, java.time.Duration.ofMinutes(5),
-                    ctx -> ai.devflow.policy.PolicyResult.ok());
+                    ctx -> ai.devflow.policy.PolicyResult.ok(),
+                    new ai.devflow.tools.GitHubClient() {
+                        @Override public void push(ai.devflow.workspace.Workspace workspace, String branchName) {
+                            throw new UnsupportedOperationException("this live test never opens a PR");
+                        }
+                        @Override public ai.devflow.tools.PullRequestResult openPullRequest(String repoUrl, String branchName, String title, String body) {
+                            throw new UnsupportedOperationException("this live test never opens a PR");
+                        }
+                    });
 
             var state = new RunState("e2e", "Add input validation to UserController so a null or "
                     + "blank email is rejected with HTTP 400. Cover it with a test.", ws);

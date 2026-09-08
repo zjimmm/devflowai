@@ -12,6 +12,8 @@ import ai.devflow.policy.ConfigurablePolicyEngine;
 import ai.devflow.policy.PolicyEngine;
 import ai.devflow.skill.FileSkillStore;
 import ai.devflow.skill.SkillStore;
+import ai.devflow.tools.GitHubApiClient;
+import ai.devflow.tools.GitHubClient;
 import ai.devflow.worker.CodingWorker;
 import ai.devflow.worker.SpringAiCodingWorker;
 import org.springframework.ai.chat.client.ChatClient;
@@ -19,6 +21,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.web.client.RestClient;
 
 import java.nio.file.Path;
 import java.time.Duration;
@@ -101,21 +104,30 @@ public class OrchestrationConfig {
         });
     }
 
+    /** Token read directly from the environment, matching ANTHROPIC_API_KEY's own pattern -- never a tracked file. */
+    @Bean
+    GitHubClient gitHubClient() {
+        String token = System.getenv("DEVFLOWAI_GITHUB_TOKEN");
+        return new GitHubApiClient(token, RestClient.builder().baseUrl("https://api.github.com").build());
+    }
+
     @Bean
     Orchestrator orchestrator(Agent coderAgent, Agent reviewerAgent, Agent plannerAgent, SkillPicker skillPicker, Scribe scribe,
                               SkillStore skillStore, MemoryStore memoryStore, RunEventPublisher events,
                               @Value("${devflowai.review.max-iterations:3}") int maxReviewIterations,
                               @Value("${devflowai.review.max-human-iterations:5}") int maxHumanIterations,
                               @Value("${devflowai.build.timeout-minutes:5}") long buildTimeoutMinutes,
-                              PolicyEngine policyEngine) {
+                              PolicyEngine policyEngine, GitHubClient gitHubClient) {
         return new Orchestrator(coderAgent, reviewerAgent, plannerAgent, skillPicker, scribe, skillStore, memoryStore,
-                events, maxReviewIterations, maxHumanIterations, Duration.ofMinutes(buildTimeoutMinutes), policyEngine);
+                events, maxReviewIterations, maxHumanIterations, Duration.ofMinutes(buildTimeoutMinutes), policyEngine,
+                gitHubClient);
     }
 
     @Bean
     RunExecutor directExecutor(Agent coderAgent, RunEventPublisher events,
-                              @Value("${devflowai.build.timeout-minutes:5}") long buildTimeoutMinutes) {
-        return new DirectExecutor(coderAgent, events, Duration.ofMinutes(buildTimeoutMinutes));
+                              @Value("${devflowai.build.timeout-minutes:5}") long buildTimeoutMinutes,
+                              GitHubClient gitHubClient) {
+        return new DirectExecutor(coderAgent, events, Duration.ofMinutes(buildTimeoutMinutes), gitHubClient);
     }
 
     @Bean
