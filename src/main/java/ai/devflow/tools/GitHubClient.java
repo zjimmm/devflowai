@@ -33,4 +33,8 @@ public interface GitHubClient {
             throws GitHubClientException {
         throw new GitHubClientException("Workflow dispatch is not configured");
     }
+
+    default WorkflowRun getWorkflowRun(String repoUrl, long workflowRunId) throws GitHubClientException {
+        throw new GitHubClientException("Workflow run observation is not configured");
+    }
 }

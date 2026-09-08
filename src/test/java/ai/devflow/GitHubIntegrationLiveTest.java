@@ -8,6 +8,7 @@ import ai.devflow.orchestrator.ApprovalGate;
 import ai.devflow.orchestrator.CiStatus;
 import ai.devflow.orchestrator.ReleaseCoordinator;
 import ai.devflow.orchestrator.ReleaseDispatcher;
+import ai.devflow.orchestrator.ReleaseObserver;
 import ai.devflow.orchestrator.ReleaseStatus;
 import ai.devflow.orchestrator.RunState;
 import ai.devflow.history.SdlcRunRepository;
@@ -39,7 +40,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * branches and PRs don't clutter a real project. See the PR Creation spec
  * §6 for why this repo must be separate.
  */
-@SpringBootTest(properties = "devflowai.ci.timeout-minutes=3")
+@SpringBootTest(properties = {"devflowai.ci.timeout-minutes=3", "devflowai.release.verification-timeout-minutes=3"})
 @AutoConfigureMockMvc
 @Tag("live")
 @EnabledIfEnvironmentVariable(named = "ANTHROPIC_API_KEY", matches = ".+")
@@ -52,6 +53,7 @@ class GitHubIntegrationLiveTest {
     @Autowired SdlcRunRepository runsRepo;
     @Autowired GitHubClient gitHubClient;
     @Autowired ReleaseDispatcher releaseDispatcher;
+    @Autowired ReleaseObserver releaseObserver;
     ObjectMapper json = new ObjectMapper();
 
     @Test
@@ -92,7 +94,7 @@ class GitHubIntegrationLiveTest {
         var gate = new ApprovalGate(Duration.ofSeconds(30));
         var pool = Executors.newSingleThreadExecutor();
         try {
-            var future = pool.submit(() -> new ReleaseCoordinator(gitHubClient, releaseDispatcher).dispatchIfRequested(
+            var future = pool.submit(() -> new ReleaseCoordinator(gitHubClient, releaseDispatcher, releaseObserver).dispatchIfRequested(
                     state, gate, prUrl, pullRequestNumber, CiStatus.PASSED,
                     event -> { }));
             long deadline = System.currentTimeMillis() + 30_000;
@@ -102,7 +104,9 @@ class GitHubIntegrationLiveTest {
             }
             gate.decide(ApprovalDecision.approve());
 
-            assertThat(future.get().orElseThrow().status()).isEqualTo(ReleaseStatus.DISPATCHED);
+            var outcome = future.get().orElseThrow();
+            assertThat(outcome.status()).isEqualTo(ReleaseStatus.DISPATCHED);
+            assertThat(outcome.verificationStatus()).isNotNull();
         } finally {
             pool.shutdownNow();
         }

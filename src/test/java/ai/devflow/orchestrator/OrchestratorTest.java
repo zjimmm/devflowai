@@ -757,10 +757,17 @@ class OrchestratorTest {
             onUpdate.accept(observation);
             return observation;
         };
+        ReleaseObserver passedReleaseObserver = (repoUrl, workflowRunId, onUpdate) -> {
+            var observation = new ReleaseObservation(VerificationStatus.PASSED,
+                    new ai.devflow.tools.WorkflowRun("completed", "success", "https://github.com/o/r/actions/runs/9"));
+            onUpdate.accept(observation);
+            return observation;
+        };
         var orchestrator = new Orchestrator(writingCoder("done"), okReviewer(), planner,
                 (task, index) -> List.of(), (state, findings, reason) -> ScribeDraft.EMPTY,
                 new FakeSkillStore(), new FakeMemoryStore(), recordingEvents, 3, 5, Duration.ofMinutes(1),
-                policyEngine, client, passedObserver, new GitHubActionsReleaseDispatcher(client, "release.yml", "main"));
+                policyEngine, client, passedObserver, new GitHubActionsReleaseDispatcher(client, "release.yml", "main"),
+                passedReleaseObserver);
         var state = new RunState("pr4", "t", workspace, "fixture", true, true);
         var gate = new ApprovalGate(Duration.ofSeconds(10));
 
@@ -770,7 +777,8 @@ class OrchestratorTest {
         assertThat(dispatched).hasValue(1);
         var doneEvent = recordedEvents(captured).stream().filter(event -> "done".equals(event.type())).findFirst().orElseThrow();
         assertThat(doneEvent.data()).containsEntry("releaseStatus", "DISPATCHED")
-                .containsEntry("releaseUrl", "https://github.com/o/r/actions/runs/9");
+                .containsEntry("releaseUrl", "https://github.com/o/r/actions/runs/9")
+                .containsEntry("verificationStatus", "PASSED");
     }
 
     private List<ai.devflow.event.RunEvent> recordedEvents(List<Object> captured) {

@@ -11,16 +11,25 @@ import java.util.function.Consumer;
 
 public class ReleaseCoordinator {
 
-    public record ReleaseOutcome(ReleaseStatus status, String url) {}
+    public record ReleaseOutcome(ReleaseStatus status, String url, Long workflowRunId,
+                                 VerificationStatus verificationStatus) {}
 
     public record ReleaseEvent(String type, String message, Map<String, Object> data) {}
 
     private final GitHubClient gitHubClient;
     private final ReleaseDispatcher releaseDispatcher;
+    private final ReleaseObserver releaseObserver;
 
     public ReleaseCoordinator(GitHubClient gitHubClient, ReleaseDispatcher releaseDispatcher) {
+        this(gitHubClient, releaseDispatcher,
+                (repoUrl, workflowRunId, onUpdate) -> { throw new GitHubClientException("Release verification is not configured"); });
+    }
+
+    public ReleaseCoordinator(GitHubClient gitHubClient, ReleaseDispatcher releaseDispatcher,
+                              ReleaseObserver releaseObserver) {
         this.gitHubClient = gitHubClient;
         this.releaseDispatcher = releaseDispatcher;
+        this.releaseObserver = releaseObserver;
     }
 
     public Optional<ReleaseOutcome> dispatchIfRequested(RunState state, ApprovalGate gate,
@@ -44,7 +53,7 @@ public class ReleaseCoordinator {
         if (!gate.await(Gate.BEFORE_RELEASE).approved()) {
             publish.accept(new ReleaseEvent("step", "Release was not approved; no workflow was dispatched.",
                     Map.of("releaseStatus", ReleaseStatus.SKIPPED.name())));
-            return Optional.of(new ReleaseOutcome(ReleaseStatus.SKIPPED, null));
+            return Optional.of(new ReleaseOutcome(ReleaseStatus.SKIPPED, null, null, null));
         }
 
         try {
@@ -62,16 +71,52 @@ public class ReleaseCoordinator {
             data.put("ref", releaseDispatcher.ref());
             if (result.htmlUrl() != null) data.put("releaseUrl", result.htmlUrl());
             publish.accept(new ReleaseEvent("step", "Release workflow dispatched.", data));
-            return Optional.of(new ReleaseOutcome(ReleaseStatus.DISPATCHED, result.htmlUrl()));
+            VerificationStatus verificationStatus = observeDeployment(state, result, publish);
+            return Optional.of(new ReleaseOutcome(ReleaseStatus.DISPATCHED, result.htmlUrl(),
+                    result.workflowRunId(), verificationStatus));
         } catch (GitHubClientException | RuntimeException e) {
             publish.accept(new ReleaseEvent("warn", "Release dispatch failed: " + e.getMessage()
                     + ". Inspect GitHub Actions manually.", Map.of("releaseStatus", ReleaseStatus.FAILED.name())));
-            return Optional.of(new ReleaseOutcome(ReleaseStatus.FAILED, null));
+            return Optional.of(new ReleaseOutcome(ReleaseStatus.FAILED, null, null, null));
         }
+    }
+
+    private VerificationStatus observeDeployment(RunState state, WorkflowDispatchResult result,
+                                                 Consumer<ReleaseEvent> publish) {
+        if (result.workflowRunId() == null) {
+            publish.accept(new ReleaseEvent("warn", "Release was dispatched but GitHub returned no workflow run ID.",
+                    Map.of("verificationStatus", VerificationStatus.UNAVAILABLE.name())));
+            return VerificationStatus.UNAVAILABLE;
+        }
+
+        state.setPhase(RunPhase.VERIFYING_DEPLOYMENT);
+        try {
+            return releaseObserver.observe(state.workspace().repoUrl(), result.workflowRunId(), observation -> {
+                Map<String, Object> data = new HashMap<>();
+                data.put("verificationStatus", observation.status().name());
+                if (result.htmlUrl() != null) data.put("releaseUrl", result.htmlUrl());
+                publish.accept(new ReleaseEvent("step", verificationMessage(observation.status()), data));
+            }).status();
+        } catch (GitHubClientException | RuntimeException e) {
+            publish.accept(new ReleaseEvent("warn", "Release verification failed: " + e.getMessage()
+                    + ". Inspect GitHub Actions manually.",
+                    Map.of("verificationStatus", VerificationStatus.UNAVAILABLE.name())));
+            return VerificationStatus.UNAVAILABLE;
+        }
+    }
+
+    private String verificationMessage(VerificationStatus status) {
+        return switch (status) {
+            case PENDING -> "Waiting for release workflow verification…";
+            case PASSED -> "Release workflow verification passed";
+            case FAILED -> "Release workflow verification failed";
+            case TIMED_OUT -> "Timed out waiting for release workflow verification";
+            case UNAVAILABLE -> "Release workflow verification is unavailable";
+        };
     }
 
     private ReleaseOutcome blocked(Consumer<ReleaseEvent> publish, String message) {
         publish.accept(new ReleaseEvent("warn", message, Map.of("releaseStatus", ReleaseStatus.BLOCKED.name())));
-        return new ReleaseOutcome(ReleaseStatus.BLOCKED, null);
+        return new ReleaseOutcome(ReleaseStatus.BLOCKED, null, null, null);
     }
 }

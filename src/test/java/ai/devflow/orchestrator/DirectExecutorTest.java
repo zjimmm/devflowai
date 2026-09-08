@@ -265,8 +265,14 @@ class DirectExecutorTest {
             onUpdate.accept(observation);
             return observation;
         };
+        ReleaseObserver passedReleaseObserver = (repoUrl, workflowRunId, onUpdate) -> {
+            var observation = new ReleaseObservation(VerificationStatus.PASSED,
+                    new ai.devflow.tools.WorkflowRun("completed", "success", "https://github.com/o/r/actions/runs/8"));
+            onUpdate.accept(observation);
+            return observation;
+        };
         var executor = new DirectExecutor(coder, recordingEvents, Duration.ofMinutes(1), client, passedObserver,
-                new GitHubActionsReleaseDispatcher(client, "release.yml", "main"));
+                new GitHubActionsReleaseDispatcher(client, "release.yml", "main"), passedReleaseObserver);
         var state = new RunState("dpr5", "t", workspace, "fixture", true, true);
         var gate = new ApprovalGate(Duration.ofSeconds(10));
         var pool = java.util.concurrent.Executors.newSingleThreadExecutor();
@@ -283,7 +289,8 @@ class DirectExecutorTest {
         assertThat(dispatched).hasValue(1);
         var doneEvent = recordedEvents(captured).stream().filter(event -> "done".equals(event.type())).findFirst().orElseThrow();
         assertThat(doneEvent.data()).containsEntry("releaseStatus", "DISPATCHED")
-                .containsEntry("releaseUrl", "https://github.com/o/r/actions/runs/8");
+                .containsEntry("releaseUrl", "https://github.com/o/r/actions/runs/8")
+                .containsEntry("verificationStatus", "PASSED");
     }
 
     private List<ai.devflow.event.RunEvent> recordedEvents(List<Object> captured) {

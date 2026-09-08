@@ -43,6 +43,7 @@ class ReleaseCoordinatorTest {
         var outcome = future.get().orElseThrow();
         assertThat(outcome.status()).isEqualTo(ReleaseStatus.DISPATCHED);
         assertThat(outcome.url()).isEqualTo("https://github.com/o/r/actions/runs/7");
+        assertThat(outcome.verificationStatus()).isEqualTo(VerificationStatus.PASSED);
         assertThat(client.mergeChecks).isEqualTo(1);
         assertThat(client.dispatches).isEqualTo(1);
         assertThat(events).anyMatch(event -> event.message().contains("Release workflow dispatched"));
@@ -86,8 +87,38 @@ class ReleaseCoordinatorTest {
         assertThat(unmergedClient.dispatches).isZero();
     }
 
+    @Test
+    void unavailableVerificationDoesNotUndoTheDispatchedRelease() throws Exception {
+        var client = new RecordingClient(true);
+        ReleaseObserver unavailableObserver = (repoUrl, workflowRunId, onUpdate) -> {
+            throw new ai.devflow.tools.GitHubClientException("GitHub is unavailable");
+        };
+        var coordinator = new ReleaseCoordinator(client,
+                new GitHubActionsReleaseDispatcher(client, "release.yml", "main"), unavailableObserver);
+        var gate = new ApprovalGate(Duration.ofSeconds(5));
+        var events = new ArrayList<ReleaseCoordinator.ReleaseEvent>();
+
+        Future<Optional<ReleaseCoordinator.ReleaseOutcome>> future = pool.submit(() -> coordinator.dispatchIfRequested(
+                releaseState(), gate, "https://github.com/o/r/pull/9", 9, CiStatus.PASSED, events::add));
+        awaitGate(gate);
+        gate.decide(ApprovalDecision.approve());
+
+        var outcome = future.get().orElseThrow();
+        assertThat(outcome.status()).isEqualTo(ReleaseStatus.DISPATCHED);
+        assertThat(outcome.verificationStatus()).isEqualTo(VerificationStatus.UNAVAILABLE);
+        assertThat(client.dispatches).isEqualTo(1);
+        assertThat(events).anyMatch(event -> event.message().contains("Release verification failed"));
+    }
+
     private ReleaseCoordinator coordinator(RecordingClient client) {
-        return new ReleaseCoordinator(client, new GitHubActionsReleaseDispatcher(client, "release.yml", "main"));
+        ReleaseObserver passedObserver = (repoUrl, workflowRunId, onUpdate) -> {
+            var observation = new ReleaseObservation(VerificationStatus.PASSED,
+                    new ai.devflow.tools.WorkflowRun("completed", "success", "https://github.com/o/r/actions/runs/7"));
+            onUpdate.accept(observation);
+            return observation;
+        };
+        return new ReleaseCoordinator(client, new GitHubActionsReleaseDispatcher(client, "release.yml", "main"),
+                passedObserver);
     }
 
     private RunState releaseState() {

@@ -78,6 +78,17 @@ public class Orchestrator implements RunExecutor {
                         RunEventPublisher events, int maxReviewIterations, int maxHumanIterations,
                         Duration buildTimeout, PolicyEngine policyEngine, GitHubClient gitHubClient,
                         CiObserver ciObserver, ReleaseDispatcher releaseDispatcher) {
+        this(coder, reviewer, planner, skillPicker, scribe, skillStore, memoryStore, events,
+                maxReviewIterations, maxHumanIterations, buildTimeout, policyEngine, gitHubClient, ciObserver,
+                releaseDispatcher,
+                (repoUrl, workflowRunId, onUpdate) -> { throw new GitHubClientException("Release verification is not configured"); });
+    }
+
+    public Orchestrator(Agent coder, Agent reviewer, Agent planner, SkillPicker skillPicker, Scribe scribe,
+                        SkillStore skillStore, MemoryStore memoryStore,
+                        RunEventPublisher events, int maxReviewIterations, int maxHumanIterations,
+                        Duration buildTimeout, PolicyEngine policyEngine, GitHubClient gitHubClient,
+                        CiObserver ciObserver, ReleaseDispatcher releaseDispatcher, ReleaseObserver releaseObserver) {
         this.coder = coder;
         this.reviewer = reviewer;
         this.planner = planner;
@@ -92,7 +103,7 @@ public class Orchestrator implements RunExecutor {
         this.policyEngine = policyEngine;
         this.gitHubClient = gitHubClient;
         this.ciObserver = ciObserver;
-        this.releaseCoordinator = new ReleaseCoordinator(gitHubClient, releaseDispatcher);
+        this.releaseCoordinator = new ReleaseCoordinator(gitHubClient, releaseDispatcher, releaseObserver);
     }
 
     public RunOutcome run(RunState state, ApprovalGate gate) {
@@ -336,6 +347,9 @@ public class Orchestrator implements RunExecutor {
             releaseOutcome.ifPresent(outcome -> {
                 doneData.put("releaseStatus", outcome.status().name());
                 if (outcome.url() != null) doneData.put("releaseUrl", outcome.url());
+                if (outcome.verificationStatus() != null) {
+                    doneData.put("verificationStatus", outcome.verificationStatus().name());
+                }
             });
             emit(state, "done", "Approved and committed on " + state.workspace().branchName(), doneData);
             String outcomeReason = draftDeclinedByBareRejection

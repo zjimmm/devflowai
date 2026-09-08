@@ -150,6 +150,26 @@ public class GitHubApiClient implements GitHubClient {
         }
     }
 
+    @Override
+    public WorkflowRun getWorkflowRun(String repoUrl, long workflowRunId) throws GitHubClientException {
+        requireToken();
+        if (workflowRunId < 1) throw new IllegalArgumentException("workflowRunId must be positive");
+        OwnerRepo or = parseOwnerRepo(repoUrl);
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> response = restClient.get()
+                    .uri(API_BASE + "/repos/{owner}/{repo}/actions/runs/{workflowRunId}",
+                            or.owner(), or.repo(), workflowRunId)
+                    .header("Authorization", "Bearer " + token)
+                    .header("Accept", "application/vnd.github+json")
+                    .retrieve()
+                    .body(Map.class);
+            return parseWorkflowRun(response);
+        } catch (RuntimeException e) {
+            throw new GitHubClientException("Reading the release workflow run failed: " + e.getMessage(), e);
+        }
+    }
+
     private void requireToken() throws GitHubClientException {
         if (token == null || token.isBlank()) {
             throw new GitHubClientException("DEVFLOWAI_GITHUB_TOKEN is not set");
@@ -200,5 +220,15 @@ public class GitHubApiClient implements GitHubClient {
         }
         Object htmlUrl = response.get("html_url");
         return new WorkflowDispatchResult(runId.longValue(), htmlUrl instanceof String url ? url : null);
+    }
+
+    static WorkflowRun parseWorkflowRun(Map<String, Object> response) {
+        if (response == null || !(response.get("status") instanceof String status)) {
+            throw new IllegalArgumentException("GitHub workflow run response is missing status");
+        }
+        Object conclusion = response.get("conclusion");
+        Object htmlUrl = response.get("html_url");
+        return new WorkflowRun(status, conclusion instanceof String value ? value : null,
+                htmlUrl instanceof String url ? url : null);
     }
 }

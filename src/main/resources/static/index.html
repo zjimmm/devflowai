@@ -118,6 +118,7 @@
           <th>PR</th>
           <th>CI</th>
           <th>Release</th>
+          <th>Verify</th>
           <th>Started</th>
         </tr>
       </thead>
@@ -355,6 +356,9 @@
         releaseCell.textContent = r.releaseStatus || '';
       }
 
+      const verificationCell = document.createElement('td');
+      verificationCell.textContent = r.verificationStatus || '';
+
       const startedCell = document.createElement('td');
       startedCell.textContent = new Date(r.startedAt).toLocaleString();
 
@@ -365,6 +369,7 @@
       tr.appendChild(prCell);
       tr.appendChild(ciCell);
       tr.appendChild(releaseCell);
+      tr.appendChild(verificationCell);
       tr.appendChild(startedCell);
       body.appendChild(tr);
     });

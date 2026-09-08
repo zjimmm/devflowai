@@ -245,6 +245,7 @@ class RunControllerTest {
                 ai.devflow.orchestrator.RunStrategy.DIRECT, java.time.Instant.now().minusSeconds(60));
         newer.recordCiStatus("PASSED");
         newer.recordRelease("DISPATCHED", "https://github.com/o/r/actions/runs/7");
+        newer.recordVerificationStatus("PASSED");
         when(history.findTop50ByOrderByStartedAtDesc()).thenReturn(java.util.List.of(newer, older));
 
         mvc.perform(get("/api/runs/history"))
@@ -256,6 +257,7 @@ class RunControllerTest {
                 .andExpect(jsonPath("$[0].ciStatus").value("PASSED"))
                 .andExpect(jsonPath("$[0].releaseStatus").value("DISPATCHED"))
                 .andExpect(jsonPath("$[0].releaseUrl").value("https://github.com/o/r/actions/runs/7"))
+                .andExpect(jsonPath("$[0].verificationStatus").value("PASSED"))
                 .andExpect(jsonPath("$[1].runId").value("older"))
                 .andExpect(jsonPath("$[1].strategy").value("DIRECT"));
     }

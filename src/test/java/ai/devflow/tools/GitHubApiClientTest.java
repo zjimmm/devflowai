@@ -109,6 +109,9 @@ class GitHubApiClientTest {
         assertThatThrownBy(() -> client(null).dispatchWorkflow("https://github.com/o/r", "release.yml", "main"))
                 .isInstanceOf(GitHubClientException.class)
                 .hasMessageContaining("DEVFLOWAI_GITHUB_TOKEN");
+        assertThatThrownBy(() -> client(null).getWorkflowRun("https://github.com/o/r", 7))
+                .isInstanceOf(GitHubClientException.class)
+                .hasMessageContaining("DEVFLOWAI_GITHUB_TOKEN");
     }
 
     @Test
@@ -141,6 +144,23 @@ class GitHubApiClientTest {
         assertThatThrownBy(() -> GitHubApiClient.parseWorkflowDispatch(Map.of()))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("workflow_run_id");
+    }
+
+    @Test
+    void parseWorkflowRunMapsSafeFields() {
+        var result = GitHubApiClient.parseWorkflowRun(Map.of(
+                "status", "completed", "conclusion", "success",
+                "html_url", "https://github.com/o/r/actions/runs/42"));
+
+        assertThat(result).isEqualTo(new WorkflowRun("completed", "success",
+                "https://github.com/o/r/actions/runs/42"));
+    }
+
+    @Test
+    void parseWorkflowRunRejectsMissingStatus() {
+        assertThatThrownBy(() -> GitHubApiClient.parseWorkflowRun(Map.of()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("status");
     }
 
     @Test

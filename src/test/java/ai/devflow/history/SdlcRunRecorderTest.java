@@ -103,6 +103,19 @@ class SdlcRunRecorderTest {
     }
 
     @Test
+    void aVerificationEventRecordsItsLatestStatus() {
+        recorder.onRunRecorded(new RunRecorded("r-verification", new RunEvent("step", "start",
+                Map.of("task", "t", "repoSlug", "fixture", "phase", "PREPARING", "strategy", "DIRECT"))));
+
+        recorder.onRunRecorded(new RunRecorded("r-verification", new RunEvent("step", "waiting",
+                Map.of("phase", "VERIFYING_DEPLOYMENT", "verificationStatus", "PENDING"))));
+        recorder.onRunRecorded(new RunRecorded("r-verification", new RunEvent("step", "passed",
+                Map.of("phase", "VERIFYING_DEPLOYMENT", "verificationStatus", "PASSED"))));
+
+        assertThat(runs.findById("r-verification").orElseThrow().verificationStatus()).isEqualTo("PASSED");
+    }
+
+    @Test
     void aDoneEventWithNoPrUrlLeavesItNull() {
         recorder.onRunRecorded(new RunRecorded("r14", new RunEvent("step", "start",
                 Map.of("task", "t", "repoSlug", "fixture", "phase", "PREPARING", "strategy", "DIRECT"))));

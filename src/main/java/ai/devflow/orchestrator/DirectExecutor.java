@@ -42,12 +42,18 @@ public class DirectExecutor implements RunExecutor {
 
     public DirectExecutor(Agent coder, RunEventPublisher events, Duration buildTimeout, GitHubClient gitHubClient,
                           CiObserver ciObserver, ReleaseDispatcher releaseDispatcher) {
+        this(coder, events, buildTimeout, gitHubClient, ciObserver, releaseDispatcher,
+                (repoUrl, workflowRunId, onUpdate) -> { throw new GitHubClientException("Release verification is not configured"); });
+    }
+
+    public DirectExecutor(Agent coder, RunEventPublisher events, Duration buildTimeout, GitHubClient gitHubClient,
+                          CiObserver ciObserver, ReleaseDispatcher releaseDispatcher, ReleaseObserver releaseObserver) {
         this.coder = coder;
         this.events = events;
         this.buildTimeout = buildTimeout;
         this.gitHubClient = gitHubClient;
         this.ciObserver = ciObserver;
-        this.releaseCoordinator = new ReleaseCoordinator(gitHubClient, releaseDispatcher);
+        this.releaseCoordinator = new ReleaseCoordinator(gitHubClient, releaseDispatcher, releaseObserver);
     }
 
     @Override
@@ -136,6 +142,9 @@ public class DirectExecutor implements RunExecutor {
         releaseOutcome.ifPresent(outcome -> {
             doneData.put("releaseStatus", outcome.status().name());
             if (outcome.url() != null) doneData.put("releaseUrl", outcome.url());
+            if (outcome.verificationStatus() != null) {
+                doneData.put("verificationStatus", outcome.verificationStatus().name());
+            }
         });
         emit(state, "done", "Direct run committed on " + state.workspace().branchName(), doneData);
         return new Orchestrator.RunOutcome(true, "Direct run committed, no review", state);

@@ -41,6 +41,7 @@ class StaticPageTest {
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("id=\"open-pr\"")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("id=\"release\"")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("<th>CI</th>")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("<th>Release</th>")));
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("<th>Release</th>")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("<th>Verify</th>")));
     }
 }
