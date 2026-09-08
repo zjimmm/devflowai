@@ -3,219 +3,452 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>devflowai</title>
+  <meta name="theme-color" content="#101826">
+  <title>DevFlowAI Control Plane</title>
   <style>
-    :root { color-scheme: light dark; --fg:#1a1a1a; --bg:#fbfbfa; --muted:#6b6b6b;
-            --line:#e0e0dc; --accent:#2d6a4f; --warn:#9a3412; }
-    @media (prefers-color-scheme: dark) {
-      :root { --fg:#e8e8e6; --bg:#1c1c1b; --muted:#9a9a97; --line:#333331;
-              --accent:#74c69d; --warn:#fb923c; }
+    :root {
+      color-scheme: light dark;
+      --canvas:#eef3f8; --surface:#ffffff; --surface-raised:#f8fbfe; --ink:#132033;
+      --muted:#65758a; --line:#d8e1eb; --accent:#087d72; --accent-soft:#d9f3ef;
+      --info:#265bd6; --info-soft:#e2ebff; --warning:#a95d05; --warning-soft:#fff0d7;
+      --danger:#bb3450; --danger-soft:#fde5ea; --shadow:0 18px 50px rgba(31, 57, 83, 0.09);
+      --radius:14px; --radius-sm:8px;
     }
-    * { box-sizing: border-box; }
-    body { margin:0; padding:2rem 1rem; background:var(--bg); color:var(--fg);
-           font:15px/1.55 ui-sans-serif, system-ui, -apple-system, sans-serif; }
-    main { max-width: 46rem; margin: 0 auto; }
-    h1 { font-size:1.1rem; letter-spacing:-0.01em; margin:0 0 1.5rem; }
-    label { display:block; font-size:0.8rem; color:var(--muted); margin-bottom:0.3rem; }
-    .row { margin-bottom:0.9rem; }
-    input, select, textarea { width:100%; padding:0.55rem 0.7rem; font:inherit;
-      color:var(--fg); background:var(--bg); border:1px solid var(--line); border-radius:6px; }
-    textarea { resize:vertical; }
-    input:disabled, textarea:disabled { opacity:0.6; }
-    button { font:inherit; padding:0.5rem 1.1rem; border-radius:6px; cursor:pointer;
-      border:1px solid var(--line); background:var(--bg); color:var(--fg); }
-    button.primary { background:var(--accent); border-color:var(--accent); color:var(--bg); }
-    button:disabled { opacity:0.45; cursor:not-allowed; }
-    .doc-info { margin-top:0.5rem; display:flex; align-items:center; gap:0.6rem;
-      color:var(--muted); font-size:0.85rem; }
-    .doc-info button { padding:0.15rem 0.55rem; font-size:0.8rem; }
-    hr { border:0; border-top:1px solid var(--line); margin:1.5rem 0; }
-    #log { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:13px; }
-    .ev { padding:0.3rem 0; border-bottom:1px solid var(--line); }
-    .ev .t { color:var(--muted); margin-right:0.5rem; }
-    .ev.error .m, .ev.aborted .m { color:var(--warn); }
-    .ev.done .m { color:var(--accent); }
-    .files { color:var(--muted); padding-left:1.4rem; }
-    #gate { border:1px solid var(--accent); border-radius:8px; padding:1rem; margin-top:1rem; }
-    #gate h2 { font-size:0.95rem; margin:0 0 0.6rem; }
-    .hidden { display:none; }
-    .actions { display:flex; gap:0.6rem; margin-top:0.8rem; }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --canvas:#0b111a; --surface:#111b28; --surface-raised:#162231; --ink:#e6edf5;
+        --muted:#9baabd; --line:#263649; --accent:#4fd2bd; --accent-soft:#123c3b;
+        --info:#85a8ff; --info-soft:#1b315c; --warning:#f0b96b; --warning-soft:#47331b;
+        --danger:#ff9aae; --danger-soft:#4a202d; --shadow:0 18px 50px rgba(0, 0, 0, 0.24);
+      }
+    }
+    * { box-sizing:border-box; }
+    body {
+      margin:0; min-width:320px; background:var(--canvas); color:var(--ink);
+      font:1rem/1.5 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    button, input, select, textarea { font:inherit; }
+    button { cursor:pointer; }
+    button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+      outline:3px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset:2px;
+    }
+    .app-shell { max-width:1180px; margin:0 auto; padding:1.25rem clamp(1rem, 3vw, 2.5rem) 3rem; }
+    .topbar {
+      display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:0.45rem 0 1.3rem;
+      border-bottom:1px solid var(--line); margin-bottom:1.35rem;
+    }
+    .brand { display:flex; align-items:baseline; gap:0.7rem; }
+    .brand strong { letter-spacing:-0.04em; font-size:1.25rem; }
+    .brand span { color:var(--muted); font-size:0.85rem; }
+    .run-state, .status-badge, .stage-state {
+      display:inline-flex; align-items:center; gap:0.4rem; border-radius:999px; font-size:0.78rem;
+      font-weight:700; letter-spacing:0.02em; padding:0.3rem 0.65rem; white-space:nowrap;
+    }
+    .run-state { color:var(--muted); background:var(--surface-raised); border:1px solid var(--line); }
+    .run-state::before { content:""; width:0.48rem; height:0.48rem; border-radius:50%; background:currentColor; }
+    .run-state.running { color:var(--info); background:var(--info-soft); border-color:transparent; }
+    .run-state.waiting { color:var(--warning); background:var(--warning-soft); border-color:transparent; }
+    .run-state.complete { color:var(--accent); background:var(--accent-soft); border-color:transparent; }
+    .run-state.failed { color:var(--danger); background:var(--danger-soft); border-color:transparent; }
+    .workspace-grid { display:grid; grid-template-columns:minmax(0, 1.16fr) minmax(19rem, 0.84fr); gap:1rem; }
+    .panel {
+      background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow);
+    }
+    .panel-head { display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; padding:1.15rem 1.2rem 0; }
+    .eyebrow { color:var(--accent); font-size:0.75rem; font-weight:800; letter-spacing:0.1em; text-transform:uppercase; margin:0 0 0.25rem; }
+    h1, h2, h3, p { margin-top:0; }
+    h1 { font-size:1.25rem; line-height:1.2; letter-spacing:-0.03em; margin-bottom:0; }
+    h2 { font-size:1rem; line-height:1.25; letter-spacing:-0.02em; margin-bottom:0; }
+    h3 { font-size:0.8rem; color:var(--muted); font-weight:750; letter-spacing:0.06em; text-transform:uppercase; }
+    .run-form { padding:1.2rem; }
+    .field-grid { display:grid; grid-template-columns:1fr 1fr; gap:0.85rem; }
+    .field-wide { grid-column:1 / -1; }
+    label { display:block; color:var(--muted); font-size:0.82rem; font-weight:700; margin-bottom:0.35rem; }
+    input, select, textarea {
+      width:100%; border:1px solid var(--line); border-radius:var(--radius-sm); padding:0.62rem 0.7rem;
+      color:var(--ink); background:var(--surface-raised);
+    }
+    textarea { min-height:7.5rem; resize:vertical; }
+    input:disabled, textarea:disabled { opacity:0.58; }
+    .repo-input { margin-top:0.45rem; }
+    .doc-info { display:flex; align-items:center; gap:0.55rem; color:var(--muted); font-size:0.82rem; margin-top:0.45rem; }
+    .check-grid { display:grid; grid-template-columns:1fr 1fr; gap:0.55rem; margin:1rem 0; }
+    .check-card { display:flex; gap:0.55rem; align-items:flex-start; padding:0.65rem; border:1px solid var(--line); border-radius:var(--radius-sm); }
+    .check-card input { width:auto; margin:0.18rem 0 0; accent-color:var(--accent); }
+    .check-card label { color:var(--ink); margin:0; font-size:0.83rem; font-weight:650; line-height:1.3; }
+    .check-card small { display:block; color:var(--muted); font-weight:400; margin-top:0.15rem; }
+    .button-row { display:flex; align-items:center; gap:0.7rem; }
+    .button-primary, .button-secondary {
+      border-radius:var(--radius-sm); border:1px solid var(--line); padding:0.62rem 0.92rem; font-weight:750;
+      color:var(--ink); background:var(--surface-raised);
+    }
+    .button-primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+    .button-primary:hover { filter:brightness(1.06); }
+    .button-primary:disabled, button:disabled { opacity:0.55; cursor:not-allowed; }
+    .overview { min-height:100%; }
+    .overview-body { padding:1.1rem 1.2rem 1.2rem; }
+    .phase-name { font-size:1.4rem; letter-spacing:-0.04em; margin:0.2rem 0 0; }
+    .branch { color:var(--muted); font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:0.78rem; min-height:1.2rem; }
+    .metric-grid { display:grid; grid-template-columns:repeat(3, 1fr); gap:0.5rem; margin:1.1rem 0; }
+    .metric { padding:0.65rem; border-radius:var(--radius-sm); background:var(--surface-raised); border:1px solid var(--line); }
+    .metric dt { color:var(--muted); font-size:0.72rem; font-weight:700; }
+    .metric dd { margin:0.15rem 0 0; font-size:0.85rem; font-weight:800; overflow-wrap:anywhere; }
+    .stage-rail { display:grid; grid-template-columns:repeat(3, 1fr); gap:0.5rem; }
+    .stage { min-height:4.4rem; padding:0.58rem; border:1px solid var(--line); border-radius:var(--radius-sm); background:var(--surface-raised); }
+    .stage span { display:block; color:var(--muted); font-size:0.7rem; font-weight:750; letter-spacing:0.04em; text-transform:uppercase; }
+    .stage strong { display:block; font-size:0.84rem; margin-top:0.18rem; }
+    .stage-state { margin-top:0.3rem; padding:0; color:var(--muted); font-size:0.7rem; }
+    .stage-state::before { content:"○"; font-size:0.85rem; }
+    .stage.complete { background:var(--accent-soft); border-color:color-mix(in srgb, var(--accent) 45%, var(--line)); }
+    .stage.complete .stage-state { color:var(--accent); }
+    .stage.complete .stage-state::before { content:"✓"; }
+    .stage.active { border-color:var(--info); box-shadow:inset 0 0 0 1px var(--info); }
+    .stage.active .stage-state { color:var(--info); }
+    .stage.active .stage-state::before { content:"●"; font-size:0.6rem; }
+    .stage.failed { background:var(--danger-soft); border-color:var(--danger); }
+    .stage.failed .stage-state { color:var(--danger); }
+    .stage.failed .stage-state::before { content:"!"; }
+    .activity-layout { display:grid; grid-template-columns:minmax(0, 1fr) minmax(18rem, 0.52fr); gap:1rem; margin-top:1rem; }
+    .activity-panel, .approval-panel { min-height:16rem; }
+    .activity-list { padding:0.4rem 1.2rem 1.1rem; max-height:31rem; overflow:auto; }
+    .activity-empty { color:var(--muted); padding:1.25rem 0; font-size:0.9rem; }
+    .event { padding:0.8rem 0; border-bottom:1px solid var(--line); }
+    .event:last-child { border-bottom:0; }
+    .event-meta { display:flex; flex-wrap:wrap; gap:0.4rem 0.65rem; color:var(--muted); font-size:0.75rem; font-weight:700; margin-bottom:0.2rem; }
+    .event-type { color:var(--accent); text-transform:uppercase; letter-spacing:0.06em; }
+    .event.warn .event-type, .event.aborted .event-type { color:var(--warning); }
+    .event.error .event-type { color:var(--danger); }
+    .event-message { margin:0; overflow-wrap:anywhere; }
+    .event-details { color:var(--muted); font-size:0.82rem; margin-top:0.38rem; overflow-wrap:anywhere; }
+    .event-details a, .archive-table a { color:var(--info); text-underline-offset:0.16em; }
+    .approval-panel { padding-bottom:1.1rem; }
+    .approval-body { padding:0.85rem 1.2rem 0; }
+    .approval-detail { color:var(--muted); font-size:0.84rem; white-space:pre-wrap; min-height:2rem; }
+    .approval-actions { display:flex; gap:0.55rem; margin-top:0.8rem; }
+    .hidden { display:none !important; }
+    .archive { margin-top:1rem; }
+    .archive-head { padding:1.15rem 1.2rem 0.75rem; display:flex; align-items:center; justify-content:space-between; gap:1rem; }
+    .table-wrap { overflow-x:auto; }
+    .archive-table { width:100%; min-width:850px; border-collapse:collapse; font-size:0.83rem; }
+    .archive-table th { background:var(--surface-raised); color:var(--muted); font-size:0.72rem; letter-spacing:0.05em; text-transform:uppercase; text-align:left; padding:0.65rem 0.85rem; }
+    .archive-table td { border-top:1px solid var(--line); padding:0.72rem 0.85rem; vertical-align:middle; }
+    .archive-table td:first-child { min-width:13rem; font-weight:650; }
+    .status-badge { color:var(--muted); background:var(--surface-raised); padding:0.2rem 0.48rem; }
+    .status-badge.done { color:var(--accent); background:var(--accent-soft); }
+    .status-badge.failed, .status-badge.aborted { color:var(--danger); background:var(--danger-soft); }
+    .status-badge.running { color:var(--info); background:var(--info-soft); }
+    .audit-panel { margin-top:1rem; }
+    .audit-list { padding:0.35rem 1.2rem 1rem; max-height:25rem; overflow:auto; }
+    .audit-empty { color:var(--muted); font-size:0.9rem; padding:1rem 0; }
+    @media (max-width:860px) {
+      .workspace-grid, .activity-layout { grid-template-columns:1fr; }
+      .overview { min-height:auto; }
+    }
+    @media (max-width:560px) {
+      .app-shell { padding:0.85rem 0.8rem 2rem; }
+      .topbar { align-items:flex-start; flex-direction:column; }
+      .field-grid, .check-grid { grid-template-columns:1fr; }
+      .metric-grid { grid-template-columns:1fr; }
+      .stage-rail { grid-template-columns:repeat(2, 1fr); }
+      .panel-head, .archive-head { align-items:flex-start; flex-direction:column; }
+    }
   </style>
 </head>
 <body>
-<main>
-  <h1>devflowai</h1>
+<div class="app-shell">
+  <header class="topbar">
+    <div class="brand"><strong>DevFlowAI</strong><span>Control plane</span></div>
+    <div id="run-state" class="run-state" role="status" aria-live="polite">Ready</div>
+  </header>
 
-  <section id="start">
-    <div class="row">
-      <label for="repo">Repo</label>
-      <select id="repo"><option value="fixture">bundled fixture</option></select>
-      <input id="repo-url" placeholder="or paste a public https:// git URL instead" style="margin-top:0.4rem">
-    </div>
-    <div class="row">
-      <label for="task">Task</label>
-      <textarea id="task" rows="4" placeholder="Add input validation to UserController and cover it with tests.">Add input validation to UserController so a null or blank email is rejected with HTTP 400. Cover it with a test.</textarea>
-    </div>
-    <div class="row">
-      <label for="doc">Attach a PRD or task doc instead (.md/.txt, optional — replaces the text above)</label>
-      <input id="doc" type="file" accept=".md,.markdown,.txt">
-      <div id="doc-info" class="doc-info hidden">
-        <span id="doc-name"></span>
-        <button id="doc-remove" type="button">✕ remove</button>
+  <main>
+    <section class="workspace-grid" aria-label="Run workspace">
+      <form id="run-form" class="panel" novalidate>
+        <div class="panel-head">
+          <div><p class="eyebrow">New run</p><h1>Start a controlled change</h1></div>
+          <span class="status-badge">Configured</span>
+        </div>
+        <div class="run-form">
+          <div class="field-grid">
+            <div>
+              <label for="repo">Repository</label>
+              <select id="repo"><option value="fixture">Bundled fixture</option></select>
+              <input id="repo-url" class="repo-input" placeholder="Public https:// Git URL">
+            </div>
+            <div>
+              <label for="strategy">Execution strategy</label>
+              <select id="strategy">
+                <option value="orchestrated">Orchestrated review</option>
+                <option value="direct">Direct coder pass</option>
+              </select>
+            </div>
+            <div class="field-wide">
+              <label for="task">Task</label>
+              <textarea id="task" placeholder="Describe the change and its acceptance criteria.">Add input validation to UserController so a null or blank email is rejected with HTTP 400. Cover it with a test.</textarea>
+            </div>
+            <div class="field-wide">
+              <label for="doc">Task document <span style="font-weight:400">(.md, .markdown, or .txt; optional)</span></label>
+              <input id="doc" type="file" accept=".md,.markdown,.txt">
+              <div id="doc-info" class="doc-info hidden"><span id="doc-name"></span><button id="doc-remove" class="button-secondary" type="button">Remove</button></div>
+            </div>
+          </div>
+          <div class="check-grid">
+            <div class="check-card"><input id="open-pr" type="checkbox"><label for="open-pr">Open pull request<small>Requires a real GitHub repository.</small></label></div>
+            <div class="check-card"><input id="release" type="checkbox"><label for="release">Dispatch release workflow<small>After passed CI, merge, and approval.</small></label></div>
+          </div>
+          <div class="button-row"><button id="run" class="button-primary" type="submit">Start run</button></div>
+        </div>
+      </form>
+
+      <section class="panel overview" aria-label="Current run">
+        <div class="panel-head">
+          <div><p class="eyebrow">Current run</p><h2 id="phase-name" class="phase-name">Ready to start</h2></div>
+          <span id="phase-badge" class="status-badge">Idle</span>
+        </div>
+        <div class="overview-body">
+          <div id="active-branch" class="branch">No active branch</div>
+          <dl class="metric-grid">
+            <div class="metric"><dt>Build</dt><dd id="metric-build">Not run</dd></div>
+            <div class="metric"><dt>CI</dt><dd id="metric-ci">Not run</dd></div>
+            <div class="metric"><dt>Delivery</dt><dd id="metric-delivery">Not requested</dd></div>
+          </dl>
+          <h3>Lifecycle</h3>
+          <div id="stage-rail" class="stage-rail" aria-label="Lifecycle status"></div>
+        </div>
+      </section>
+    </section>
+
+    <section class="activity-layout" aria-label="Run activity">
+      <section class="panel activity-panel">
+        <div class="panel-head"><div><p class="eyebrow">Live activity</p><h2>Run events</h2></div></div>
+        <div id="log" class="activity-list" aria-live="polite"><p id="activity-empty" class="activity-empty">Run events will appear here.</p></div>
+      </section>
+
+      <section id="gate" class="panel approval-panel hidden" aria-live="assertive">
+        <div class="panel-head"><div><p class="eyebrow">Approval required</p><h2 id="gate-title"></h2></div></div>
+        <div class="approval-body">
+          <div id="gate-detail" class="approval-detail"></div>
+          <label id="reason-label" for="reason" style="margin-top:1rem">Reason <span style="font-weight:400">(optional)</span></label>
+          <input id="reason" placeholder="Add a note for this decision">
+          <div class="approval-actions"><button id="approve" class="button-primary" type="button">Approve</button><button id="reject" class="button-secondary" type="button">Reject</button></div>
+        </div>
+      </section>
+    </section>
+
+    <section class="panel archive" id="history">
+      <div class="archive-head"><div><p class="eyebrow">Run archive</p><h2>Recent SDLC runs</h2></div><button id="history-refresh" class="button-secondary" type="button">Refresh</button></div>
+      <div class="table-wrap">
+        <table class="archive-table">
+          <thead><tr><th>Task</th><th>Strategy</th><th>Status</th><th>Build</th><th>PR</th><th>CI</th><th>Release</th><th>Verify</th><th>Audit</th><th>Started</th></tr></thead>
+          <tbody id="history-body"></tbody>
+        </table>
       </div>
-    </div>
-    <div class="row">
-      <label for="strategy">Strategy</label>
-      <select id="strategy">
-        <option value="orchestrated">Orchestrated (planner, reviewer, gates)</option>
-        <option value="direct">Direct (single coder pass, no review)</option>
-      </select>
-    </div>
-    <div class="row">
-      <label style="display:flex; align-items:center; gap:0.5rem;">
-        <input id="open-pr" type="checkbox" style="width:auto;">
-        Open a pull request when done (requires a real repo, not the bundled fixture)
-      </label>
-    </div>
-    <div class="row">
-      <label style="display:flex; align-items:center; gap:0.5rem;">
-        <input id="release" type="checkbox" style="width:auto;">
-        After passed CI and a manual PR merge, dispatch the configured release workflow
-      </label>
-    </div>
-    <button id="run" class="primary">Run</button>
-  </section>
+    </section>
 
-  <hr>
-
-  <section id="log"></section>
-
-  <section id="gate" class="hidden">
-    <h2 id="gate-title"></h2>
-    <div id="gate-detail" class="files"></div>
-    <div class="row" style="margin-top:0.8rem">
-      <label id="reason-label" for="reason">reason (optional — a rejection with a reason sends it back to the coder)</label>
-      <input id="reason" placeholder="use a DTO, don't annotate the entity">
-    </div>
-    <div class="actions">
-      <button id="approve" class="primary">Approve</button>
-      <button id="reject">Reject</button>
-    </div>
-  </section>
-
-  <hr>
-
-  <section id="history">
-    <h2 style="font-size:0.95rem; margin:0 0 0.6rem;">Past runs</h2>
-    <button id="history-refresh" type="button">Refresh</button>
-    <table style="width:100%; border-collapse:collapse; margin-top:0.6rem; font-size:0.85rem;">
-      <thead>
-        <tr style="text-align:left; color:var(--muted);">
-          <th style="padding:0.3rem 0;">Task</th>
-          <th>Strategy</th>
-          <th>Status</th>
-          <th>Build</th>
-          <th>PR</th>
-          <th>CI</th>
-          <th>Release</th>
-          <th>Verify</th>
-          <th>Audit</th>
-          <th>Started</th>
-        </tr>
-      </thead>
-      <tbody id="history-body"></tbody>
-    </table>
-  </section>
-
-  <section id="audit" class="hidden">
-    <h2 id="audit-title" style="font-size:0.95rem; margin:1.2rem 0 0.6rem;">Run audit</h2>
-    <button id="audit-close" type="button">Close audit</button>
-    <div id="audit-list" style="margin-top:0.6rem;"></div>
-  </section>
-</main>
+    <section id="audit" class="panel audit-panel hidden">
+      <div class="archive-head"><div><p class="eyebrow">Immutable history</p><h2 id="audit-title">Run audit</h2></div><button id="audit-close" class="button-secondary" type="button">Close</button></div>
+      <div id="audit-list" class="audit-list"></div>
+    </section>
+  </main>
+</div>
 
 <script>
   const $ = (id) => document.getElementById(id);
+  const stageGroups = [
+    { id: 'prepare', label: 'Prepare', phases: ['PREPARING'] },
+    { id: 'engineering', label: 'Engineer', phases: ['CODING', 'REVIEWING'] },
+    { id: 'quality', label: 'Validate', phases: ['BUILDING'] },
+    { id: 'delivery', label: 'Deliver', phases: ['COMMITTING', 'OPENING_PR', 'VALIDATING_CI'] },
+    { id: 'release', label: 'Release', phases: ['WAITING_FOR_RELEASE_APPROVAL', 'VERIFYING_RELEASE_PR', 'DISPATCHING_RELEASE', 'VERIFYING_DEPLOYMENT'] },
+    { id: 'complete', label: 'Complete', phases: ['DONE'] }
+  ];
   let runId = null;
+  let currentStageId = null;
+  const completedStages = new Set();
 
-  function log(type, message, data) {
-    const el = document.createElement('div');
-    el.className = 'ev ' + type;
-    const time = new Date().toLocaleTimeString();
-    el.innerHTML = `<span class="t">${time}</span><span class="m"></span>`;
-    el.querySelector('.m').textContent = message;
-    if (data && Array.isArray(data.filesTouched) && data.filesTouched.length) {
-      const files = document.createElement('div');
-      files.className = 'files';
-      files.textContent = data.filesTouched.join('  ·  ');
-      el.appendChild(files);
+  function titleCase(value) {
+    return value.toLowerCase().split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+  }
+
+  function setRunState(label, variant = '') {
+    const state = $('run-state');
+    state.textContent = label;
+    state.className = `run-state ${variant}`.trim();
+  }
+
+  function renderStageRail() {
+    const rail = $('stage-rail');
+    rail.replaceChildren();
+    stageGroups.forEach(stage => {
+      const item = document.createElement('div');
+      item.className = 'stage';
+      item.id = `stage-${stage.id}`;
+      const label = document.createElement('span');
+      label.textContent = stage.label;
+      const phase = document.createElement('strong');
+      phase.textContent = 'Not started';
+      const state = document.createElement('div');
+      state.className = 'stage-state';
+      state.textContent = 'Pending';
+      item.append(label, phase, state);
+      rail.appendChild(item);
+    });
+  }
+
+  function stageFor(phase) {
+    return stageGroups.find(stage => stage.phases.includes(phase));
+  }
+
+  function updateStageRail(phase, eventType) {
+    const stage = stageFor(phase);
+    if (phase === 'FAILED' || eventType === 'error' || eventType === 'aborted') {
+      const failed = currentStageId || stage?.id;
+      const failedItem = failed ? $(`stage-${failed}`) : null;
+      if (failedItem) {
+        failedItem.classList.remove('active', 'complete');
+        failedItem.classList.add('failed');
+        failedItem.querySelector('strong').textContent = 'Needs attention';
+        failedItem.querySelector('.stage-state').textContent = 'Stopped';
+      }
+      return;
     }
-    if (data && (data.inputTokens !== undefined || data.outputTokens !== undefined)) {
-      const cost = document.createElement('div');
-      cost.className = 'files'; // reuse the existing muted-text style
-      cost.textContent = `${data.inputTokens || 0} input tokens · ${data.outputTokens || 0} output tokens`;
-      el.appendChild(cost);
+    if (!stage) return;
+    if (currentStageId && currentStageId !== stage.id) completedStages.add(currentStageId);
+    if (phase === 'DONE') {
+      if (currentStageId) completedStages.add(currentStageId);
+      completedStages.add('complete');
+    } else {
+      currentStageId = stage.id;
     }
-    if (data && data.prUrl) {
-      const pr = document.createElement('div');
-      pr.className = 'files';
+    stageGroups.forEach(group => {
+      const item = $(`stage-${group.id}`);
+      if (!item) return;
+      item.classList.remove('active', 'complete', 'failed');
+      const label = item.querySelector('strong');
+      const state = item.querySelector('.stage-state');
+      if (completedStages.has(group.id)) {
+        item.classList.add('complete');
+        label.textContent = group.id === 'complete' ? 'Finished' : 'Observed';
+        state.textContent = 'Complete';
+      } else if (group.id === currentStageId) {
+        item.classList.add('active');
+        label.textContent = titleCase(phase);
+        state.textContent = eventType === 'gate' ? 'Waiting' : 'Active';
+      } else {
+        label.textContent = 'Not started';
+        state.textContent = 'Pending';
+      }
+    });
+  }
+
+  function resetRunOverview() {
+    currentStageId = null;
+    completedStages.clear();
+    $('phase-name').textContent = 'Preparing run';
+    $('phase-badge').textContent = 'Starting';
+    $('active-branch').textContent = 'Preparing workspace';
+    $('metric-build').textContent = 'Not run';
+    $('metric-ci').textContent = 'Not run';
+    $('metric-delivery').textContent = 'Not requested';
+    renderStageRail();
+    setRunState('Starting', 'running');
+  }
+
+  function updateRunOverview(type, data) {
+    const phase = data && data.phase;
+    if (phase) {
+      $('phase-name').textContent = titleCase(phase);
+      $('phase-badge').textContent = titleCase(phase);
+      updateStageRail(phase, type);
+    }
+    if (data && data.branch) $('active-branch').textContent = data.branch;
+    if (data && data.success !== undefined) $('metric-build').textContent = data.success ? 'Passed' : 'Failed';
+    if (data && data.ciStatus) $('metric-ci').textContent = titleCase(data.ciStatus);
+    if (data && data.releaseStatus) $('metric-delivery').textContent = titleCase(data.releaseStatus);
+    if (data && data.verificationStatus) $('metric-delivery').textContent = `Verified: ${titleCase(data.verificationStatus)}`;
+    if (type === 'gate') setRunState('Approval needed', 'waiting');
+    else if (type === 'done') setRunState('Run complete', 'complete');
+    else if (type === 'error' || type === 'aborted') setRunState('Run stopped', 'failed');
+    else if (phase) setRunState('Run active', 'running');
+  }
+
+  function safeLink(url, text) {
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol !== 'https:') return null;
       const link = document.createElement('a');
-      link.href = data.prUrl;
+      link.href = parsed.href;
       link.target = '_blank';
       link.rel = 'noopener noreferrer';
-      link.textContent = 'View pull request';
-      pr.appendChild(link);
-      el.appendChild(pr);
+      link.textContent = text;
+      return link;
+    } catch (_) {
+      return null;
     }
-    if (data && data.releaseUrl) {
-      const release = document.createElement('div');
-      release.className = 'files';
-      const link = document.createElement('a');
-      link.href = data.releaseUrl;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      link.textContent = 'View release workflow';
-      release.appendChild(link);
-      el.appendChild(release);
+  }
+
+  function appendEventDetail(event, content) {
+    const detail = document.createElement('div');
+    detail.className = 'event-details';
+    if (typeof content === 'string') detail.textContent = content;
+    else detail.appendChild(content);
+    event.appendChild(detail);
+  }
+
+  function log(type, message, data = {}) {
+    $('activity-empty')?.remove();
+    const event = document.createElement('article');
+    event.className = `event ${type}`;
+    const meta = document.createElement('div');
+    meta.className = 'event-meta';
+    const timestamp = document.createElement('span');
+    timestamp.textContent = new Date().toLocaleTimeString();
+    const eventType = document.createElement('span');
+    eventType.className = 'event-type';
+    eventType.textContent = type;
+    meta.append(timestamp, eventType);
+    if (data.phase) {
+      const phase = document.createElement('span');
+      phase.textContent = titleCase(data.phase);
+      meta.appendChild(phase);
     }
-    if (data && Array.isArray(data.ciChecks) && data.ciChecks.length) {
-      const checks = document.createElement('div');
-      checks.className = 'files';
+    const body = document.createElement('p');
+    body.className = 'event-message';
+    body.textContent = message;
+    event.append(meta, body);
+    if (Array.isArray(data.filesTouched) && data.filesTouched.length) appendEventDetail(event, data.filesTouched.join(' · '));
+    if (data.inputTokens !== undefined || data.outputTokens !== undefined) {
+      appendEventDetail(event, `${data.inputTokens || 0} input tokens · ${data.outputTokens || 0} output tokens`);
+    }
+    if (data.prUrl) {
+      const link = safeLink(data.prUrl, 'View pull request');
+      if (link) appendEventDetail(event, link);
+    }
+    if (data.releaseUrl) {
+      const link = safeLink(data.releaseUrl, 'View release workflow');
+      if (link) appendEventDetail(event, link);
+    }
+    if (Array.isArray(data.ciChecks)) {
       data.ciChecks.forEach(check => {
-        const row = document.createElement('div');
         const label = `${check.name}: ${check.status}${check.conclusion ? ` (${check.conclusion})` : ''}`;
-        if (check.detailsUrl) {
-          const link = document.createElement('a');
-          link.href = check.detailsUrl;
-          link.target = '_blank';
-          link.rel = 'noopener noreferrer';
-          link.textContent = label;
-          row.appendChild(link);
-        } else {
-          row.textContent = label;
-        }
-        checks.appendChild(row);
+        const link = check.detailsUrl ? safeLink(check.detailsUrl, label) : null;
+        appendEventDetail(event, link || label);
       });
-      el.appendChild(checks);
     }
-    $('log').appendChild(el);
-    el.scrollIntoView({ block: 'nearest' });
+    $('log').appendChild(event);
+    event.scrollIntoView({ block: 'nearest' });
   }
 
   function showGate(message, data) {
     $('gate-title').textContent = message;
     $('reason-label').textContent = data && data.gate === 'BEFORE_RELEASE'
-      ? 'reason (optional — records why release was not dispatched)'
-      : 'reason (optional — a rejection with a reason sends it back to the coder)';
-    const files = (data && data.filesTouched) || [];
-    let detail = files.length ? files.join('\n') : '';
-    if (data && data.skillDraft) {
-      detail += (detail ? '\n\n' : '') + `Learned: ${data.skillDraft.name} — ${data.skillDraft.description}`;
-    }
-    if (data && data.memoryFact) {
-      detail += (detail ? '\n' : '') + `Remembered: ${data.memoryFact}`;
-    }
-    $('gate-detail').textContent = detail;
+      ? 'Decision note (optional — records why release was not dispatched)'
+      : 'Decision note (optional — sends feedback to the workflow)';
+    const details = [];
+    if (Array.isArray(data && data.filesTouched) && data.filesTouched.length) details.push(data.filesTouched.join('\n'));
+    if (data && data.skillDraft) details.push(`Learned: ${data.skillDraft.name} — ${data.skillDraft.description}`);
+    if (data && data.memoryFact) details.push(`Remembered: ${data.memoryFact}`);
+    $('gate-detail').textContent = details.join('\n\n') || 'Review the current run activity, then make a decision.';
     $('reason').value = '';
     $('gate').classList.remove('hidden');
   }
@@ -226,8 +459,7 @@
     const reason = $('reason').value.trim();
     hideGate();
     const res = await fetch(`/api/runs/${runId}/approve`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ approved, reason: reason || null })
     });
     if (!res.ok) log('error', `Could not submit that decision (HTTP ${res.status})`);
@@ -238,25 +470,13 @@
 
   const MAX_DOC_BYTES = 100 * 1024;
   const DOC_EXT_RE = /\.(md|markdown|txt)$/i;
-
   $('doc').onchange = async () => {
     const file = $('doc').files[0];
-    $('doc').value = ''; // clears the picker so the same file can be re-selected later
+    $('doc').value = '';
     if (!file) return;
-
-    if (!DOC_EXT_RE.test(file.name)) {
-      log('error', `"${file.name}" isn't a .md/.markdown/.txt file`);
-      return;
-    }
-    if (file.size === 0) {
-      log('error', `"${file.name}" is empty`);
-      return;
-    }
-    if (file.size > MAX_DOC_BYTES) {
-      log('error', `"${file.name}" is ${(file.size / 1024).toFixed(1)} KB, over the 100 KB limit`);
-      return;
-    }
-
+    if (!DOC_EXT_RE.test(file.name)) { log('error', `"${file.name}" is not a supported task document`); return; }
+    if (file.size === 0) { log('error', `"${file.name}" is empty`); return; }
+    if (file.size > MAX_DOC_BYTES) { log('error', `"${file.name}" is over the 100 KB limit`); return; }
     $('task').value = await file.text();
     $('task').disabled = true;
     $('doc-name').textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
@@ -269,170 +489,133 @@
     $('doc-info').classList.add('hidden');
   };
 
-  $('run').onclick = async () => {
+  $('run-form').onsubmit = async (event) => {
+    event.preventDefault();
     const task = $('task').value.trim();
     if (!task) return;
     const repoUrl = $('repo-url').value.trim();
-    if (repoUrl && !repoUrl.startsWith('https://')) {
-      log('error', 'Repo URL must start with https://');
-      return;
-    }
-    const repo = repoUrl || $('repo').value;
+    if (repoUrl && !repoUrl.startsWith('https://')) { log('error', 'Repository URL must start with https://'); return; }
     $('run').disabled = true;
-    $('log').innerHTML = '';
+    $('log').replaceChildren();
+    const empty = document.createElement('p');
+    empty.id = 'activity-empty';
+    empty.className = 'activity-empty';
+    empty.textContent = 'Waiting for the run to begin.';
+    $('log').appendChild(empty);
     hideGate();
-
+    resetRunOverview();
     const res = await fetch('/api/runs', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ task, repo, strategy: $('strategy').value, openPr: $('open-pr').checked,
-        release: $('release').checked })
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ task, repo: repoUrl || $('repo').value, strategy: $('strategy').value,
+        openPr: $('open-pr').checked, release: $('release').checked })
     });
     if (!res.ok) {
       log('error', `Could not start the run (HTTP ${res.status})`);
       $('run').disabled = false;
+      setRunState('Ready');
       return;
     }
     runId = (await res.json()).runId;
     log('step', `Run ${runId} started`);
-
     const source = new EventSource(`/api/runs/${runId}/stream`);
-    const onEvent = (e) => {
-      const payload = JSON.parse(e.data);
-      if (payload.type === 'gate') showGate(payload.message, payload.data);
-      else log(payload.type, payload.message, payload.data);
-      if (payload.type === 'done' || payload.type === 'error' || payload.type === 'aborted') {
+    const onEvent = (streamEvent) => {
+      const payload = JSON.parse(streamEvent.data);
+      updateRunOverview(payload.type, payload.data || {});
+      if (payload.type === 'gate') showGate(payload.message, payload.data || {});
+      else log(payload.type, payload.message, payload.data || {});
+      if (['done', 'error', 'aborted'].includes(payload.type)) {
         source.close();
         $('run').disabled = false;
+        loadHistory();
       }
     };
-    ['step', 'gate', 'done', 'error', 'aborted', 'warn'].forEach(n => source.addEventListener(n, onEvent));
-    source.onerror = () => { source.close(); $('run').disabled = false; };
+    ['step', 'gate', 'done', 'error', 'aborted', 'warn'].forEach(name => source.addEventListener(name, onEvent));
+    source.onerror = () => {
+      source.close();
+      $('run').disabled = false;
+    };
   };
 
-  $('release').onchange = () => {
-    if ($('release').checked) $('open-pr').checked = true;
-  };
-  $('open-pr').onchange = () => {
-    if (!$('open-pr').checked) $('release').checked = false;
-  };
+  $('release').onchange = () => { if ($('release').checked) $('open-pr').checked = true; };
+  $('open-pr').onchange = () => { if (!$('open-pr').checked) $('release').checked = false; };
+
+  function statusBadge(status) {
+    const badge = document.createElement('span');
+    badge.className = `status-badge ${String(status || '').toLowerCase()}`;
+    badge.textContent = status || 'Unknown';
+    return badge;
+  }
 
   function renderHistory(rows) {
     const body = $('history-body');
-    body.innerHTML = '';
-    rows.forEach(r => {
-      const tr = document.createElement('tr');
-      tr.style.borderTop = '1px solid var(--line)';
-
-      const task = r.task.length > 60 ? r.task.slice(0, 60) + '…' : r.task;
-      const taskCell = document.createElement('td');
-      taskCell.style.padding = '0.3rem 0';
-      taskCell.textContent = task;
-
-      const strategyCell = document.createElement('td');
-      strategyCell.textContent = r.strategy || '';
-
-      const statusCell = document.createElement('td');
-      statusCell.textContent = r.status;
-
-      const buildCell = document.createElement('td');
-      buildCell.textContent = r.buildSucceeded === true ? 'passed' : r.buildSucceeded === false ? 'failed' : '';
-
-      const prCell = document.createElement('td');
-      if (r.prUrl) {
-        const prLink = document.createElement('a');
-        prLink.href = r.prUrl;
-        prLink.target = '_blank';
-        prLink.rel = 'noopener noreferrer';
-        prLink.textContent = 'PR';
-        prCell.appendChild(prLink);
-      }
-
-      const ciCell = document.createElement('td');
-      ciCell.textContent = r.ciStatus || '';
-
-      const releaseCell = document.createElement('td');
-      if (r.releaseUrl) {
-        const releaseLink = document.createElement('a');
-        releaseLink.href = r.releaseUrl;
-        releaseLink.target = '_blank';
-        releaseLink.rel = 'noopener noreferrer';
-        releaseLink.textContent = r.releaseStatus || 'release';
-        releaseCell.appendChild(releaseLink);
-      } else {
-        releaseCell.textContent = r.releaseStatus || '';
-      }
-
-      const verificationCell = document.createElement('td');
-      verificationCell.textContent = r.verificationStatus || '';
-
-      const auditCell = document.createElement('td');
+    body.replaceChildren();
+    rows.forEach(run => {
+      const row = document.createElement('tr');
+      const task = document.createElement('td');
+      task.textContent = run.task.length > 72 ? `${run.task.slice(0, 72)}…` : run.task;
+      const strategy = document.createElement('td'); strategy.textContent = run.strategy || '';
+      const status = document.createElement('td'); status.appendChild(statusBadge(run.status));
+      const build = document.createElement('td'); build.textContent = run.buildSucceeded === true ? 'Passed' : run.buildSucceeded === false ? 'Failed' : '—';
+      const pr = document.createElement('td');
+      const prLink = run.prUrl ? safeLink(run.prUrl, 'Pull request') : null;
+      pr.append(prLink || document.createTextNode('—'));
+      const ci = document.createElement('td'); ci.textContent = run.ciStatus || '—';
+      const release = document.createElement('td');
+      const releaseLink = run.releaseUrl ? safeLink(run.releaseUrl, run.releaseStatus || 'Release') : null;
+      release.append(releaseLink || document.createTextNode(run.releaseStatus || '—'));
+      const verification = document.createElement('td'); verification.textContent = run.verificationStatus || '—';
+      const audit = document.createElement('td');
       const auditButton = document.createElement('button');
-      auditButton.type = 'button';
-      auditButton.textContent = 'View';
-      auditButton.onclick = () => loadAudit(r.runId);
-      auditCell.appendChild(auditButton);
-
-      const startedCell = document.createElement('td');
-      startedCell.textContent = new Date(r.startedAt).toLocaleString();
-
-      tr.appendChild(taskCell);
-      tr.appendChild(strategyCell);
-      tr.appendChild(statusCell);
-      tr.appendChild(buildCell);
-      tr.appendChild(prCell);
-      tr.appendChild(ciCell);
-      tr.appendChild(releaseCell);
-      tr.appendChild(verificationCell);
-      tr.appendChild(auditCell);
-      tr.appendChild(startedCell);
-      body.appendChild(tr);
+      auditButton.type = 'button'; auditButton.className = 'button-secondary'; auditButton.textContent = 'View';
+      auditButton.onclick = () => loadAudit(run.runId);
+      audit.appendChild(auditButton);
+      const started = document.createElement('td'); started.textContent = new Date(run.startedAt).toLocaleString();
+      row.append(task, strategy, status, build, pr, ci, release, verification, audit, started);
+      body.appendChild(row);
     });
   }
 
   async function loadHistory() {
     const res = await fetch('/api/runs/history');
-    if (!res.ok) return;
-    renderHistory(await res.json());
+    if (res.ok) renderHistory(await res.json());
   }
-
-  $('history-refresh').onclick = loadHistory;
 
   function renderAudit(entries) {
     const list = $('audit-list');
-    list.innerHTML = '';
+    list.replaceChildren();
+    if (!entries.length) {
+      const empty = document.createElement('p');
+      empty.className = 'audit-empty';
+      empty.textContent = 'No audit events have been recorded for this run.';
+      list.appendChild(empty);
+      return;
+    }
     entries.forEach(entry => {
-      const row = document.createElement('div');
-      row.className = 'ev';
-      const time = document.createElement('span');
-      time.className = 't';
-      time.textContent = new Date(entry.occurredAt).toLocaleString();
-      const meta = document.createElement('span');
-      meta.className = 't';
-      meta.textContent = [entry.actor, entry.action, entry.phase].filter(Boolean).join(' · ');
-      const message = document.createElement('span');
-      message.className = 'm';
+      const event = document.createElement('article');
+      event.className = 'event';
+      const meta = document.createElement('div');
+      meta.className = 'event-meta';
+      meta.textContent = `${new Date(entry.occurredAt).toLocaleString()} · ${[entry.actor, entry.action, entry.phase].filter(Boolean).join(' · ')}`;
+      const message = document.createElement('p');
+      message.className = 'event-message';
       message.textContent = entry.message;
-      row.appendChild(time);
-      row.appendChild(meta);
-      row.appendChild(message);
-      list.appendChild(row);
+      event.append(meta, message);
+      list.appendChild(event);
     });
   }
 
   async function loadAudit(id) {
     const res = await fetch(`/api/runs/${id}/audit`);
-    if (!res.ok) {
-      log('error', `Could not load audit history (HTTP ${res.status})`);
-      return;
-    }
-    $('audit-title').textContent = `Run ${id} audit`;
+    if (!res.ok) { log('error', `Could not load audit history (HTTP ${res.status})`); return; }
+    $('audit-title').textContent = `Audit for run ${id}`;
     renderAudit(await res.json());
     $('audit').classList.remove('hidden');
     $('audit').scrollIntoView({ block: 'nearest' });
   }
 
+  $('history-refresh').onclick = loadHistory;
   $('audit-close').onclick = () => $('audit').classList.add('hidden');
+  renderStageRail();
   loadHistory();
 </script>
 </body>

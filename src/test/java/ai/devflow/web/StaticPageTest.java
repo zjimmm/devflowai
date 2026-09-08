@@ -29,7 +29,7 @@ class StaticPageTest {
 
         mvc.perform(get("/index.html"))
                 .andExpect(status().isOk())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("devflowai")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("DevFlowAI")))
                 // The three things the operator actually interacts with.
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("id=\"task\"")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("id=\"run\"")))
@@ -42,6 +42,9 @@ class StaticPageTest {
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("value=\"direct\"")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("id=\"open-pr\"")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("id=\"release\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("id=\"run-form\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("id=\"stage-rail\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("id=\"metric-delivery\"")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("<th>CI</th>")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("<th>Release</th>")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("<th>Verify</th>")));
