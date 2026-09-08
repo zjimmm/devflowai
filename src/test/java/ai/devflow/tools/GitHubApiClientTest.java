@@ -12,6 +12,8 @@ import org.springframework.web.client.RestClient;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -90,6 +92,30 @@ class GitHubApiClientTest {
                 "https://github.com/o/r", "b", "title", "body"))
                 .isInstanceOf(GitHubClientException.class)
                 .hasMessageContaining("DEVFLOWAI_GITHUB_TOKEN");
+    }
+
+    @Test
+    void listCiChecksFailsFastWhenTheTokenIsMissing() {
+        assertThatThrownBy(() -> client(null).listCiChecks("https://github.com/o/r", "branch"))
+                .isInstanceOf(GitHubClientException.class)
+                .hasMessageContaining("DEVFLOWAI_GITHUB_TOKEN");
+    }
+
+    @Test
+    void parseCheckRunsMapsTheSafeFields() {
+        var checks = GitHubApiClient.parseCheckRuns(Map.of("check_runs", List.of(Map.of(
+                "name", "Build", "status", "completed", "conclusion", "success",
+                "details_url", "https://github.com/o/r/actions/runs/1"))));
+
+        assertThat(checks).containsExactly(new CiCheck("Build", "completed", "success",
+                "https://github.com/o/r/actions/runs/1"));
+    }
+
+    @Test
+    void parseCheckRunsRejectsMalformedResponses() {
+        assertThatThrownBy(() -> GitHubApiClient.parseCheckRuns(Map.of()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("check_runs");
     }
 
     @Test

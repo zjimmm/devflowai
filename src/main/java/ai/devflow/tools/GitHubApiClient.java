@@ -8,6 +8,8 @@ import org.eclipse.jgit.transport.RemoteRefUpdate;
 import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
 import org.springframework.web.client.RestClient;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -83,6 +85,25 @@ public class GitHubApiClient implements GitHubClient {
         }
     }
 
+    @Override
+    public List<CiCheck> listCiChecks(String repoUrl, String ref) throws GitHubClientException {
+        requireToken();
+        OwnerRepo or = parseOwnerRepo(repoUrl);
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> response = restClient.get()
+                    .uri(API_BASE + "/repos/{owner}/{repo}/commits/{ref}/check-runs?filter=latest&per_page=100",
+                            or.owner(), or.repo(), ref)
+                    .header("Authorization", "Bearer " + token)
+                    .header("Accept", "application/vnd.github+json")
+                    .retrieve()
+                    .body(Map.class);
+            return parseCheckRuns(response);
+        } catch (RuntimeException e) {
+            throw new GitHubClientException("Reading CI checks failed: " + e.getMessage(), e);
+        }
+    }
+
     private void requireToken() throws GitHubClientException {
         if (token == null || token.isBlank()) {
             throw new GitHubClientException("DEVFLOWAI_GITHUB_TOKEN is not set");
@@ -101,5 +122,29 @@ public class GitHubApiClient implements GitHubClient {
             throw new IllegalArgumentException("Not a valid GitHub repo URL: " + repoUrl);
         }
         return new OwnerRepo(parts[0], parts[1]);
+    }
+
+    @SuppressWarnings("unchecked")
+    static List<CiCheck> parseCheckRuns(Map<String, Object> response) {
+        if (response == null || !(response.get("check_runs") instanceof List<?> runs)) {
+            throw new IllegalArgumentException("GitHub returned no check_runs list");
+        }
+        List<CiCheck> checks = new ArrayList<>();
+        for (Object value : runs) {
+            if (!(value instanceof Map<?, ?> run)) {
+                throw new IllegalArgumentException("GitHub returned an invalid check run");
+            }
+            Object name = run.get("name");
+            Object status = run.get("status");
+            if (!(name instanceof String checkName) || !(status instanceof String checkStatus)) {
+                throw new IllegalArgumentException("GitHub check run is missing name or status");
+            }
+            Object conclusion = run.get("conclusion");
+            Object detailsUrl = run.get("details_url");
+            checks.add(new CiCheck(checkName, checkStatus,
+                    conclusion instanceof String valueConclusion ? valueConclusion : null,
+                    detailsUrl instanceof String valueDetailsUrl ? valueDetailsUrl : null));
+        }
+        return List.copyOf(checks);
     }
 }

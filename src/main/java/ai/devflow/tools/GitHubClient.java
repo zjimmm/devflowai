@@ -2,6 +2,8 @@ package ai.devflow.tools;
 
 import ai.devflow.workspace.Workspace;
 
+import java.util.List;
+
 /**
  * Provider-neutral seam for the one place this codebase talks to a real
  * forge (mirrors how {@code CodingWorker} isolates the LLM provider). The
@@ -17,4 +19,9 @@ public interface GitHubClient {
     /** Opens a pull request from {@code branchName} against the repo's default branch. */
     PullRequestResult openPullRequest(String repoUrl, String branchName, String title, String body)
             throws GitHubClientException;
+
+    /** Lists the latest GitHub check runs associated with the branch or commit {@code ref}. */
+    default List<CiCheck> listCiChecks(String repoUrl, String ref) throws GitHubClientException {
+        throw new GitHubClientException("CI check observation is not configured");
+    }
 }

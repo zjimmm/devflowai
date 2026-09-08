@@ -38,6 +38,7 @@ class StaticPageTest {
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("/api/runs/history")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("id=\"strategy\"")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("value=\"direct\"")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("id=\"open-pr\"")));
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("id=\"open-pr\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("<th>CI</th>")));
     }
 }

@@ -50,11 +50,22 @@ public class Orchestrator implements RunExecutor {
     private final Duration buildTimeout;
     private final PolicyEngine policyEngine;
     private final GitHubClient gitHubClient;
+    private final CiObserver ciObserver;
 
     public Orchestrator(Agent coder, Agent reviewer, Agent planner, SkillPicker skillPicker, Scribe scribe,
                         SkillStore skillStore, MemoryStore memoryStore,
                         RunEventPublisher events, int maxReviewIterations, int maxHumanIterations,
                         Duration buildTimeout, PolicyEngine policyEngine, GitHubClient gitHubClient) {
+        this(coder, reviewer, planner, skillPicker, scribe, skillStore, memoryStore, events,
+                maxReviewIterations, maxHumanIterations, buildTimeout, policyEngine, gitHubClient,
+                (repoUrl, ref, onUpdate) -> { throw new GitHubClientException("CI check observation is not configured"); });
+    }
+
+    public Orchestrator(Agent coder, Agent reviewer, Agent planner, SkillPicker skillPicker, Scribe scribe,
+                        SkillStore skillStore, MemoryStore memoryStore,
+                        RunEventPublisher events, int maxReviewIterations, int maxHumanIterations,
+                        Duration buildTimeout, PolicyEngine policyEngine, GitHubClient gitHubClient,
+                        CiObserver ciObserver) {
         this.coder = coder;
         this.reviewer = reviewer;
         this.planner = planner;
@@ -68,6 +79,7 @@ public class Orchestrator implements RunExecutor {
         this.buildTimeout = buildTimeout;
         this.policyEngine = policyEngine;
         this.gitHubClient = gitHubClient;
+        this.ciObserver = ciObserver;
     }
 
     public RunOutcome run(RunState state, ApprovalGate gate) {
@@ -295,12 +307,15 @@ public class Orchestrator implements RunExecutor {
                 }
             }
 
+            CiStatus ciStatus = observeCi(state, prUrl);
+
             state.setPhase(RunPhase.DONE);
             Map<String, Object> doneData = new HashMap<>();
             doneData.put("branch", state.workspace().branchName());
             doneData.put("inputTokens", state.totalTokens().input());
             doneData.put("outputTokens", state.totalTokens().output());
             if (prUrl != null) doneData.put("prUrl", prUrl);
+            if (ciStatus != null) doneData.put("ciStatus", ciStatus.name());
             emit(state, "done", "Approved and committed on " + state.workspace().branchName(), doneData);
             String outcomeReason = draftDeclinedByBareRejection
                     ? "Committed by operator; declined the proposed lesson"
@@ -314,6 +329,33 @@ public class Orchestrator implements RunExecutor {
                         ? "Review loop ended without a review"
                         : "Review loop hit the cap of " + maxReviewIterations + " iterations";
         return failed(state, reason);
+    }
+
+    private CiStatus observeCi(RunState state, String prUrl) {
+        if (prUrl == null) return null;
+
+        state.setPhase(RunPhase.VALIDATING_CI);
+        try {
+            return ciObserver.observe(state.workspace().repoUrl(), state.workspace().branchName(),
+                    observation -> emit(state, "step", ciMessage(observation.status()), Map.of(
+                            "ciStatus", observation.status().name(), "ciChecks", observation.checks())))
+                    .status();
+        } catch (GitHubClientException | RuntimeException e) {
+            CiStatus unavailable = CiStatus.UNAVAILABLE;
+            emit(state, "warn", "Pull request opened, but CI observation failed: " + e.getMessage()
+                    + ". Inspect it manually from " + prUrl + ".", Map.of("ciStatus", unavailable.name()));
+            return unavailable;
+        }
+    }
+
+    private String ciMessage(CiStatus status) {
+        return switch (status) {
+            case PENDING -> "Waiting for CI checks…";
+            case PASSED -> "CI checks passed";
+            case FAILED -> "CI checks failed";
+            case TIMED_OUT -> "Timed out waiting for CI checks";
+            case UNAVAILABLE -> "CI checks are unavailable";
+        };
     }
 
     /**

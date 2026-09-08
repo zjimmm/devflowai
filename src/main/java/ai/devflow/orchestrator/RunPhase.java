@@ -8,6 +8,7 @@ public enum RunPhase {
     BUILDING,
     COMMITTING,
     OPENING_PR,
+    VALIDATING_CI,
     DONE,
     FAILED
 }

@@ -76,6 +76,19 @@ class SdlcRunRecorderTest {
     }
 
     @Test
+    void aCiObservationRecordsItsLatestStatus() {
+        recorder.onRunRecorded(new RunRecorded("r-ci", new RunEvent("step", "start",
+                Map.of("task", "t", "repoSlug", "fixture", "phase", "PREPARING", "strategy", "ORCHESTRATED"))));
+
+        recorder.onRunRecorded(new RunRecorded("r-ci", new RunEvent("step", "waiting",
+                Map.of("phase", "VALIDATING_CI", "ciStatus", "PENDING"))));
+        recorder.onRunRecorded(new RunRecorded("r-ci", new RunEvent("step", "passed",
+                Map.of("phase", "VALIDATING_CI", "ciStatus", "PASSED"))));
+
+        assertThat(runs.findById("r-ci").orElseThrow().ciStatus()).isEqualTo("PASSED");
+    }
+
+    @Test
     void aDoneEventWithNoPrUrlLeavesItNull() {
         recorder.onRunRecorded(new RunRecorded("r14", new RunEvent("step", "start",
                 Map.of("task", "t", "repoSlug", "fixture", "phase", "PREPARING", "strategy", "DIRECT"))));

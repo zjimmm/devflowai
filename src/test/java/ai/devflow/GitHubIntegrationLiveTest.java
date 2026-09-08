@@ -25,7 +25,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * branches and PRs don't clutter a real project. See the PR Creation spec
  * §6 for why this repo must be separate.
  */
-@SpringBootTest
+@SpringBootTest(properties = "devflowai.ci.timeout-minutes=3")
 @AutoConfigureMockMvc
 @Tag("live")
 @EnabledIfEnvironmentVariable(named = "ANTHROPIC_API_KEY", matches = ".+")
@@ -39,7 +39,7 @@ class GitHubIntegrationLiveTest {
     ObjectMapper json = new ObjectMapper();
 
     @Test
-    void aDirectStrategyRunOpensARealPullRequest() throws Exception {
+    void aDirectStrategyRunOpensARealPullRequestAndRecordsCiStatus() throws Exception {
         String repoUrl = System.getenv("DEVFLOWAI_LIVETEST_REPO");
 
         String body = mvc.perform(post("/api/runs")
@@ -52,13 +52,15 @@ class GitHubIntegrationLiveTest {
         RunHandle handle = registry.find(runId);
         assertThat(handle).isNotNull();
 
-        long deadline = System.currentTimeMillis() + 180_000;
+        long deadline = System.currentTimeMillis() + 240_000;
         while (!handle.task().isDone()) {
             if (System.currentTimeMillis() > deadline) throw new AssertionError("run never finished");
             Thread.sleep(50);
         }
 
         assertThat(handle.state().phase()).isEqualTo(RunPhase.DONE);
-        assertThat(runsRepo.findById(runId).orElseThrow().prUrl()).isNotBlank();
+        var run = runsRepo.findById(runId).orElseThrow();
+        assertThat(run.prUrl()).isNotBlank();
+        assertThat(run.ciStatus()).isIn("PASSED", "FAILED", "TIMED_OUT");
     }
 }

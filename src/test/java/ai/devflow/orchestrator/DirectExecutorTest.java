@@ -154,14 +154,23 @@ class DirectExecutorTest {
         var state = new RunState("dpr1", "t", workspace, "fixture", true);
         var gate = new ApprovalGate(Duration.ofSeconds(10));
 
-        var outcome = new DirectExecutor(coder, recordingEvents, Duration.ofMinutes(1), fakeClient).run(state, gate);
+        CiObserver passedObserver = (repoUrl, ref, onUpdate) -> {
+            var observation = new CiObservation(CiStatus.PASSED, List.of());
+            onUpdate.accept(observation);
+            return observation;
+        };
+        var outcome = new DirectExecutor(coder, recordingEvents, Duration.ofMinutes(1), fakeClient, passedObserver)
+                .run(state, gate);
 
         assertThat(outcome.approved()).isTrue();
         assertThat(pushed.get()).isEqualTo(1);
         var doneEvent = recordedEvents(captured).stream()
                 .filter(e -> "done".equals(e.type()))
                 .findFirst().orElseThrow();
-        assertThat(doneEvent.data()).containsEntry("prUrl", "https://github.com/o/r/pull/9");
+        assertThat(doneEvent.data()).containsEntry("prUrl", "https://github.com/o/r/pull/9")
+                .containsEntry("ciStatus", "PASSED");
+        assertThat(recordedEvents(captured)).anyMatch(event ->
+                "VALIDATING_CI".equals(event.data().get("phase")));
     }
 
     @Test
@@ -206,6 +215,32 @@ class DirectExecutorTest {
                 .filter(e -> "done".equals(e.type()))
                 .findFirst().orElseThrow();
         assertThat(doneEvent.data()).doesNotContainKey("prUrl");
+    }
+
+    @Test
+    void unavailableCiStillCompletesTheAlreadyOpenedPullRequest() throws Exception {
+        var coder = writingCoder("done");
+        var captured = new ArrayList<Object>();
+        var recordingEvents = new RunEventPublisher(captured::add);
+        GitHubClient fakeClient = new GitHubClient() {
+            @Override public void push(ai.devflow.workspace.Workspace workspace, String branchName) { }
+            @Override public PullRequestResult openPullRequest(String repoUrl, String branchName, String title, String body) {
+                return new PullRequestResult("https://github.com/o/r/pull/10", 10);
+            }
+        };
+        CiObserver unavailableObserver = (repoUrl, ref, onUpdate) -> {
+            throw new GitHubClientException("GitHub is unavailable");
+        };
+        var state = new RunState("dpr4", "t", workspace, "fixture", true);
+
+        var outcome = new DirectExecutor(coder, recordingEvents, Duration.ofMinutes(1), fakeClient, unavailableObserver)
+                .run(state, new ApprovalGate(Duration.ofSeconds(10)));
+
+        assertThat(outcome.approved()).isTrue();
+        var runEvents = recordedEvents(captured);
+        assertThat(runEvents).anyMatch(event -> "warn".equals(event.type()) && event.message().contains("CI observation failed"));
+        assertThat(runEvents).filteredOn(event -> "done".equals(event.type()))
+                .singleElement().extracting(event -> event.data().get("ciStatus")).isEqualTo("UNAVAILABLE");
     }
 
     private List<ai.devflow.event.RunEvent> recordedEvents(List<Object> captured) {

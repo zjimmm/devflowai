@@ -658,10 +658,15 @@ class OrchestratorTest {
                 return new PullRequestResult("https://github.com/o/r/pull/7", 7);
             }
         };
+        CiObserver passedObserver = (repoUrl, ref, onUpdate) -> {
+            var observation = new CiObservation(CiStatus.PASSED, List.of());
+            onUpdate.accept(observation);
+            return observation;
+        };
         var orchestrator = new Orchestrator(writingCoder("done"), okReviewer(), planner,
                 (task, index) -> List.of(), (state, findings, reason) -> ScribeDraft.EMPTY,
                 new FakeSkillStore(), new FakeMemoryStore(),
-                recordingEvents, 3, 5, Duration.ofMinutes(1), policyEngine, fakeClient);
+                recordingEvents, 3, 5, Duration.ofMinutes(1), policyEngine, fakeClient, passedObserver);
         var state = new RunState("pr1", "t", workspace, "fixture", true);
         var gate = new ApprovalGate(Duration.ofSeconds(10));
 
@@ -672,7 +677,10 @@ class OrchestratorTest {
         var doneEvent = recordedEvents(captured).stream()
                 .filter(e -> "done".equals(e.type()))
                 .findFirst().orElseThrow();
-        assertThat(doneEvent.data()).containsEntry("prUrl", "https://github.com/o/r/pull/7");
+        assertThat(doneEvent.data()).containsEntry("prUrl", "https://github.com/o/r/pull/7")
+                .containsEntry("ciStatus", "PASSED");
+        assertThat(recordedEvents(captured)).anyMatch(event ->
+                "VALIDATING_CI".equals(event.data().get("phase")));
     }
 
     @Test

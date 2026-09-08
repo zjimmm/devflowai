@@ -110,6 +110,7 @@
           <th>Status</th>
           <th>Build</th>
           <th>PR</th>
+          <th>CI</th>
           <th>Started</th>
         </tr>
       </thead>
@@ -150,6 +151,26 @@
       link.textContent = 'View pull request';
       pr.appendChild(link);
       el.appendChild(pr);
+    }
+    if (data && Array.isArray(data.ciChecks) && data.ciChecks.length) {
+      const checks = document.createElement('div');
+      checks.className = 'files';
+      data.ciChecks.forEach(check => {
+        const row = document.createElement('div');
+        const label = `${check.name}: ${check.status}${check.conclusion ? ` (${check.conclusion})` : ''}`;
+        if (check.detailsUrl) {
+          const link = document.createElement('a');
+          link.href = check.detailsUrl;
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          link.textContent = label;
+          row.appendChild(link);
+        } else {
+          row.textContent = label;
+        }
+        checks.appendChild(row);
+      });
+      el.appendChild(checks);
     }
     $('log').appendChild(el);
     el.scrollIntoView({ block: 'nearest' });
@@ -290,6 +311,9 @@
         prCell.appendChild(prLink);
       }
 
+      const ciCell = document.createElement('td');
+      ciCell.textContent = r.ciStatus || '';
+
       const startedCell = document.createElement('td');
       startedCell.textContent = new Date(r.startedAt).toLocaleString();
 
@@ -298,6 +322,7 @@
       tr.appendChild(statusCell);
       tr.appendChild(buildCell);
       tr.appendChild(prCell);
+      tr.appendChild(ciCell);
       tr.appendChild(startedCell);
       body.appendChild(tr);
     });

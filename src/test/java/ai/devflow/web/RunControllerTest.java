@@ -204,6 +204,7 @@ class RunControllerTest {
                 ai.devflow.orchestrator.RunStrategy.ORCHESTRATED, java.time.Instant.now());
         var older = new ai.devflow.history.SdlcRun("older", "fix a bug", "fixture",
                 ai.devflow.orchestrator.RunStrategy.DIRECT, java.time.Instant.now().minusSeconds(60));
+        newer.recordCiStatus("PASSED");
         when(history.findTop50ByOrderByStartedAtDesc()).thenReturn(java.util.List.of(newer, older));
 
         mvc.perform(get("/api/runs/history"))
@@ -212,6 +213,7 @@ class RunControllerTest {
                 .andExpect(jsonPath("$[0].task").value("add a class"))
                 .andExpect(jsonPath("$[0].status").value("RUNNING"))
                 .andExpect(jsonPath("$[0].strategy").value("ORCHESTRATED"))
+                .andExpect(jsonPath("$[0].ciStatus").value("PASSED"))
                 .andExpect(jsonPath("$[1].runId").value("older"))
                 .andExpect(jsonPath("$[1].strategy").value("DIRECT"));
     }
