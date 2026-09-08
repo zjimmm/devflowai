@@ -119,11 +119,18 @@
           <th>CI</th>
           <th>Release</th>
           <th>Verify</th>
+          <th>Audit</th>
           <th>Started</th>
         </tr>
       </thead>
       <tbody id="history-body"></tbody>
     </table>
+  </section>
+
+  <section id="audit" class="hidden">
+    <h2 id="audit-title" style="font-size:0.95rem; margin:1.2rem 0 0.6rem;">Run audit</h2>
+    <button id="audit-close" type="button">Close audit</button>
+    <div id="audit-list" style="margin-top:0.6rem;"></div>
   </section>
 </main>
 
@@ -359,6 +366,13 @@
       const verificationCell = document.createElement('td');
       verificationCell.textContent = r.verificationStatus || '';
 
+      const auditCell = document.createElement('td');
+      const auditButton = document.createElement('button');
+      auditButton.type = 'button';
+      auditButton.textContent = 'View';
+      auditButton.onclick = () => loadAudit(r.runId);
+      auditCell.appendChild(auditButton);
+
       const startedCell = document.createElement('td');
       startedCell.textContent = new Date(r.startedAt).toLocaleString();
 
@@ -370,6 +384,7 @@
       tr.appendChild(ciCell);
       tr.appendChild(releaseCell);
       tr.appendChild(verificationCell);
+      tr.appendChild(auditCell);
       tr.appendChild(startedCell);
       body.appendChild(tr);
     });
@@ -382,6 +397,42 @@
   }
 
   $('history-refresh').onclick = loadHistory;
+
+  function renderAudit(entries) {
+    const list = $('audit-list');
+    list.innerHTML = '';
+    entries.forEach(entry => {
+      const row = document.createElement('div');
+      row.className = 'ev';
+      const time = document.createElement('span');
+      time.className = 't';
+      time.textContent = new Date(entry.occurredAt).toLocaleString();
+      const meta = document.createElement('span');
+      meta.className = 't';
+      meta.textContent = [entry.actor, entry.action, entry.phase].filter(Boolean).join(' · ');
+      const message = document.createElement('span');
+      message.className = 'm';
+      message.textContent = entry.message;
+      row.appendChild(time);
+      row.appendChild(meta);
+      row.appendChild(message);
+      list.appendChild(row);
+    });
+  }
+
+  async function loadAudit(id) {
+    const res = await fetch(`/api/runs/${id}/audit`);
+    if (!res.ok) {
+      log('error', `Could not load audit history (HTTP ${res.status})`);
+      return;
+    }
+    $('audit-title').textContent = `Run ${id} audit`;
+    renderAudit(await res.json());
+    $('audit').classList.remove('hidden');
+    $('audit').scrollIntoView({ block: 'nearest' });
+  }
+
+  $('audit-close').onclick = () => $('audit').classList.add('hidden');
   loadHistory();
 </script>
 </body>

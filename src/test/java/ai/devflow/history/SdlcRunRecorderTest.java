@@ -13,6 +13,11 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 // @DataJpaTest does not exist in this project's resolved Spring Boot 4.1.1
 // dependencies (confirmed in Task 1) -- @SpringBootTest + @Transactional on
@@ -27,6 +32,7 @@ class SdlcRunRecorderTest {
     @Autowired StageExecutionRepository stages;
     @Autowired ReviewFindingRepository findings;
     @Autowired ApprovalRepository approvals;
+    @Autowired RunAuditEntryRepository auditEntries;
     @Autowired SdlcRunRecorder recorder;
 
     @Test
@@ -39,6 +45,45 @@ class SdlcRunRecorderTest {
         assertThat(run.task()).isEqualTo("add validation");
         assertThat(run.repoSlug()).isEqualTo("fixture");
         assertThat(run.status()).isEqualTo(SdlcRunStatus.RUNNING);
+    }
+
+    @Test
+    void aRunEventCreatesAnImmutableAuditEntry() {
+        recorder.onRunRecorded(new RunRecorded("r-audit", new RunEvent("step", "Workspace ready",
+                Map.of("task", "t", "repoSlug", "fixture", "phase", "PREPARING", "strategy", "DIRECT"))));
+
+        var entry = auditEntries.findByRunIdOrderByOccurredAtAscIdAsc("r-audit").getFirst();
+        assertThat(entry.actor()).isEqualTo("SYSTEM");
+        assertThat(entry.action()).isEqualTo("STEP");
+        assertThat(entry.phase()).isEqualTo("PREPARING");
+        assertThat(entry.message()).isEqualTo("Workspace ready");
+        assertThat(entry.dataJson()).contains("repoSlug");
+    }
+
+    @Test
+    void oversizedAuditMetadataIsReducedToItsKeys() {
+        recorder.onRunRecorded(new RunRecorded("r-audit-large", new RunEvent("step", "Large event",
+                Map.of("details", "x".repeat(8_100)))));
+
+        var entry = auditEntries.findByRunIdOrderByOccurredAtAscIdAsc("r-audit-large").getFirst();
+        assertThat(entry.dataJson()).contains("truncated").contains("details");
+        assertThat(entry.dataJson().length()).isLessThanOrEqualTo(8_000);
+    }
+
+    @Test
+    void anAuditWriteFailureDoesNotPreventRunHistoryRecording() {
+        var localRuns = mock(SdlcRunRepository.class);
+        var localStages = mock(StageExecutionRepository.class);
+        var localAudits = mock(RunAuditEntryRepository.class);
+        when(localRuns.findById("r-audit-failure")).thenReturn(java.util.Optional.empty());
+        doThrow(new RuntimeException("database unavailable")).when(localAudits).save(any(RunAuditEntry.class));
+        var localRecorder = new SdlcRunRecorder(localRuns, localStages, mock(ReviewFindingRepository.class),
+                mock(ApprovalRepository.class), localAudits);
+
+        assertThatCode(() -> localRecorder.onRunRecorded(new RunRecorded("r-audit-failure", new RunEvent("step", "start",
+                Map.of("task", "t", "repoSlug", "fixture", "strategy", "DIRECT"))))).doesNotThrowAnyException();
+
+        verify(localRuns).save(any(SdlcRun.class));
     }
 
     @Test
@@ -227,6 +272,10 @@ class SdlcRunRecorderTest {
         assertThat(saved).hasSize(1);
         assertThat(saved.get(0).gate()).isEqualTo(ai.devflow.orchestrator.Gate.BEFORE_BUILD);
         assertThat(saved.get(0).approved()).isFalse();
+        var audit = auditEntries.findByRunIdOrderByOccurredAtAscIdAsc("r9").getFirst();
+        assertThat(audit.actor()).isEqualTo("OPERATOR");
+        assertThat(audit.action()).isEqualTo("REJECTED");
+        assertThat(audit.message()).contains("use a DTO");
         assertThat(saved.get(0).reason()).isEqualTo("use a DTO");
     }
 

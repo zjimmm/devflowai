@@ -27,6 +27,7 @@ class RunControllerTest {
     RunRegistry registry;
     RunEventPublisher events;
     ai.devflow.history.SdlcRunRepository history;
+    ai.devflow.history.RunAuditEntryRepository auditEntries;
     ObjectMapper json = new ObjectMapper();
     java.util.List<Object> publishedEvents = new java.util.ArrayList<>();
 
@@ -35,8 +36,10 @@ class RunControllerTest {
         registry = mock(RunRegistry.class);
         events = new RunEventPublisher();
         history = mock(ai.devflow.history.SdlcRunRepository.class);
+        auditEntries = mock(ai.devflow.history.RunAuditEntryRepository.class);
         mvc = MockMvcBuilders.standaloneSetup(
-                new RunController(registry, events, publishedEvents::add, history)).build();
+                new RunController(registry, events, publishedEvents::add, history, auditEntries,
+                        ReleaseDispatcher.disabled())).build();
     }
 
     private RunHandle handleFor(String runId) throws Exception {
@@ -157,7 +160,8 @@ class RunControllerTest {
     @Test
     void configuredReleasePassesTheOptInThroughToTheRegistry() throws Exception {
         mvc = MockMvcBuilders.standaloneSetup(
-                new RunController(registry, events, publishedEvents::add, history, configuredReleaseDispatcher())).build();
+                new RunController(registry, events, publishedEvents::add, history, auditEntries,
+                        configuredReleaseDispatcher())).build();
         when(registry.start(any(), any(), any(), anyBoolean(), anyBoolean())).thenReturn(handleFor("release1"));
 
         mvc.perform(post("/api/runs")
@@ -260,6 +264,30 @@ class RunControllerTest {
                 .andExpect(jsonPath("$[0].verificationStatus").value("PASSED"))
                 .andExpect(jsonPath("$[1].runId").value("older"))
                 .andExpect(jsonPath("$[1].strategy").value("DIRECT"));
+    }
+
+    @Test
+    void auditReturnsChronologicalRunEvents() throws Exception {
+        var startedAt = java.time.Instant.parse("2026-09-08T12:00:00Z");
+        var first = new ai.devflow.history.RunAuditEntry("audit-1", "SYSTEM", "STEP", "PREPARING",
+                "Workspace ready", "{\"branch\":\"devflowai/audit-1\"}", startedAt);
+        var second = new ai.devflow.history.RunAuditEntry("audit-1", "OPERATOR", "APPROVED", "PRE_FLIGHT",
+                "Operator approved PRE_FLIGHT", "{\"approved\":true}", startedAt.plusSeconds(10));
+        when(history.existsById("audit-1")).thenReturn(true);
+        when(auditEntries.findByRunIdOrderByOccurredAtAscIdAsc("audit-1")).thenReturn(java.util.List.of(first, second));
+
+        mvc.perform(get("/api/runs/audit-1/audit"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].actor").value("SYSTEM"))
+                .andExpect(jsonPath("$[0].action").value("STEP"))
+                .andExpect(jsonPath("$[0].phase").value("PREPARING"))
+                .andExpect(jsonPath("$[1].actor").value("OPERATOR"))
+                .andExpect(jsonPath("$[1].action").value("APPROVED"));
+    }
+
+    @Test
+    void auditForAnUnknownRunIs404() throws Exception {
+        mvc.perform(get("/api/runs/missing/audit")).andExpect(status().isNotFound());
     }
 
     private ReleaseDispatcher configuredReleaseDispatcher() {

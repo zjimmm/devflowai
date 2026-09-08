@@ -21,6 +21,7 @@ class HistoryRepositoriesTest {
     @Autowired StageExecutionRepository stages;
     @Autowired ReviewFindingRepository findings;
     @Autowired ApprovalRepository approvals;
+    @Autowired RunAuditEntryRepository auditEntries;
 
     @Test
     void savesAndReadsBackASdlcRun() {
@@ -82,5 +83,18 @@ class HistoryRepositoriesTest {
         assertThat(saved).hasSize(1);
         assertThat(saved.get(0).gate()).isEqualTo(Gate.BEFORE_BUILD);
         assertThat(saved.get(0).approved()).isFalse();
+    }
+
+    @Test
+    void auditEntriesKeepTheRunTimelineInOrder() {
+        Instant startedAt = Instant.now();
+        auditEntries.save(new RunAuditEntry("r5", "SYSTEM", "STEP", "PREPARING", "Workspace ready",
+                "{}", startedAt));
+        auditEntries.save(new RunAuditEntry("r5", "OPERATOR", "APPROVED", "PRE_FLIGHT",
+                "Operator approved PRE_FLIGHT", "{\"approved\":true}", startedAt.plusSeconds(1)));
+
+        assertThat(auditEntries.findByRunIdOrderByOccurredAtAscIdAsc("r5"))
+                .extracting(RunAuditEntry::action)
+                .containsExactly("STEP", "APPROVED");
     }
 }

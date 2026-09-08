@@ -6,11 +6,16 @@ import ai.devflow.event.RunRecorded;
 import ai.devflow.orchestrator.Gate;
 import ai.devflow.orchestrator.RunPhase;
 import ai.devflow.orchestrator.RunStrategy;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
@@ -26,13 +31,17 @@ public class SdlcRunRecorder {
     private final StageExecutionRepository stages;
     private final ReviewFindingRepository findings;
     private final ApprovalRepository approvals;
+    private final RunAuditEntryRepository auditEntries;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     public SdlcRunRecorder(SdlcRunRepository runs, StageExecutionRepository stages,
-                            ReviewFindingRepository findings, ApprovalRepository approvals) {
+                            ReviewFindingRepository findings, ApprovalRepository approvals,
+                            RunAuditEntryRepository auditEntries) {
         this.runs = runs;
         this.stages = stages;
         this.findings = findings;
         this.approvals = approvals;
+        this.auditEntries = auditEntries;
     }
 
     @EventListener
@@ -46,6 +55,7 @@ public class SdlcRunRecorder {
             String runId = recorded.runId();
             Map<String, Object> data = recorded.event().data();
 
+            safelyRecordAudit(runId, () -> recordAuditEvent(runId, recorded.event(), data));
             maybeCreateRun(runId, data);
             maybeRecordStage(runId, data);
             maybeRecordFindings(runId, data);
@@ -67,6 +77,7 @@ public class SdlcRunRecorder {
         // so a persistence hiccup (or an unexpected gate string) here must
         // never propagate out and abort the live run it's only recording.
         try {
+            safelyRecordAudit(recorded.runId(), () -> recordApprovalAudit(recorded));
             approvals.save(new Approval(recorded.runId(), Gate.valueOf(recorded.gate()),
                     recorded.approved(), recorded.reason(), Instant.now()));
         } catch (RuntimeException e) {
@@ -122,6 +133,43 @@ public class SdlcRunRecorder {
             run.recordVerificationStatus(verificationStatus);
             runs.save(run);
         });
+    }
+
+    private void recordAuditEvent(String runId, ai.devflow.event.RunEvent event, Map<String, Object> data) {
+        String phase = data.get("phase") instanceof String value ? value : null;
+        auditEntries.save(new RunAuditEntry(runId, "SYSTEM", event.type().toUpperCase(Locale.ROOT), phase,
+                event.message(), toAuditJson(data), Instant.now()));
+    }
+
+    private void safelyRecordAudit(String runId, Runnable record) {
+        try {
+            record.run();
+        } catch (RuntimeException e) {
+            System.err.println("SdlcRunRecorder failed to record audit data for run " + runId + ": " + e);
+        }
+    }
+
+    private void recordApprovalAudit(ApprovalRecorded recorded) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("gate", recorded.gate());
+        data.put("approved", recorded.approved());
+        if (recorded.reason() != null) data.put("reason", recorded.reason());
+        String action = recorded.approved() ? "APPROVED" : "REJECTED";
+        String message = "Operator " + action.toLowerCase(Locale.ROOT) + " " + recorded.gate();
+        if (recorded.reason() != null && !recorded.reason().isBlank()) message += ": " + recorded.reason();
+        auditEntries.save(new RunAuditEntry(recorded.runId(), "OPERATOR", action, recorded.gate(), message,
+                toAuditJson(data), Instant.now()));
+    }
+
+    private String toAuditJson(Map<String, Object> data) {
+        try {
+            String json = objectMapper.writeValueAsString(data);
+            if (json.length() <= 8_000) return json;
+            return objectMapper.writeValueAsString(Map.of("truncated", true,
+                    "keys", new ArrayList<>(data.keySet())));
+        } catch (JsonProcessingException e) {
+            throw new IllegalArgumentException("Could not serialize audit data", e);
+        }
     }
 
     private void maybeRecordStage(String runId, Map<String, Object> data) {

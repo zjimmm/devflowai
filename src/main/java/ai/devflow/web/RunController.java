@@ -2,6 +2,7 @@ package ai.devflow.web;
 
 import ai.devflow.event.ApprovalRecorded;
 import ai.devflow.event.RunEventPublisher;
+import ai.devflow.history.RunAuditEntryRepository;
 import ai.devflow.history.SdlcRunRepository;
 import ai.devflow.orchestrator.ApprovalDecision;
 import ai.devflow.orchestrator.Gate;
@@ -21,7 +22,7 @@ import java.util.Map;
 /**
  * The entire HTTP surface: start a run, watch it, answer a gate, and retrieve history.
  *
- * <p>Four endpoints and nothing else — the page reaches no other route
+ * <p>Five endpoints and nothing else — the page reaches no other route
  * (spec §5.3).
  */
 @RestController
@@ -32,19 +33,18 @@ public class RunController {
     private final RunEventPublisher events;
     private final ApplicationEventPublisher applicationEvents;
     private final SdlcRunRepository history;
+    private final RunAuditEntryRepository auditEntries;
     private final ReleaseDispatcher releaseDispatcher;
-
-    public RunController(RunRegistry registry, RunEventPublisher events, ApplicationEventPublisher applicationEvents, SdlcRunRepository history) {
-        this(registry, events, applicationEvents, history, ReleaseDispatcher.disabled());
-    }
 
     @Autowired
     public RunController(RunRegistry registry, RunEventPublisher events, ApplicationEventPublisher applicationEvents,
-                         SdlcRunRepository history, ReleaseDispatcher releaseDispatcher) {
+                         SdlcRunRepository history, RunAuditEntryRepository auditEntries,
+                         ReleaseDispatcher releaseDispatcher) {
         this.registry = registry;
         this.events = events;
         this.applicationEvents = applicationEvents;
         this.history = history;
+        this.auditEntries = auditEntries;
         this.releaseDispatcher = releaseDispatcher;
     }
 
@@ -124,5 +124,14 @@ public class RunController {
     @GetMapping("/history")
     public List<RunSummary> history() {
         return history.findTop50ByOrderByStartedAtDesc().stream().map(RunSummary::from).toList();
+    }
+
+    @GetMapping("/{runId}/audit")
+    public ResponseEntity<List<RunAuditSummary>> audit(@PathVariable String runId) {
+        if (registry.find(runId) == null && !history.existsById(runId)) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(auditEntries.findByRunIdOrderByOccurredAtAscIdAsc(runId).stream()
+                .map(RunAuditSummary::from).toList());
     }
 }
