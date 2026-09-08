@@ -11,5 +11,6 @@ package ai.devflow.orchestrator;
 public enum Gate {
     PRE_FLIGHT,
     BEFORE_BUILD,
-    BEFORE_COMMIT
+    BEFORE_COMMIT,
+    BEFORE_RELEASE
 }

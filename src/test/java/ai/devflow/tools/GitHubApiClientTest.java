@@ -102,6 +102,16 @@ class GitHubApiClientTest {
     }
 
     @Test
+    void releaseCallsFailFastWhenTheTokenIsMissing() {
+        assertThatThrownBy(() -> client(null).isPullRequestMerged("https://github.com/o/r", 1))
+                .isInstanceOf(GitHubClientException.class)
+                .hasMessageContaining("DEVFLOWAI_GITHUB_TOKEN");
+        assertThatThrownBy(() -> client(null).dispatchWorkflow("https://github.com/o/r", "release.yml", "main"))
+                .isInstanceOf(GitHubClientException.class)
+                .hasMessageContaining("DEVFLOWAI_GITHUB_TOKEN");
+    }
+
+    @Test
     void parseCheckRunsMapsTheSafeFields() {
         var checks = GitHubApiClient.parseCheckRuns(Map.of("check_runs", List.of(Map.of(
                 "name", "Build", "status", "completed", "conclusion", "success",
@@ -116,6 +126,21 @@ class GitHubApiClientTest {
         assertThatThrownBy(() -> GitHubApiClient.parseCheckRuns(Map.of()))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("check_runs");
+    }
+
+    @Test
+    void parseWorkflowDispatchMapsRunDetails() {
+        var result = GitHubApiClient.parseWorkflowDispatch(Map.of(
+                "workflow_run_id", 42, "html_url", "https://github.com/o/r/actions/runs/42"));
+
+        assertThat(result).isEqualTo(new WorkflowDispatchResult(42L, "https://github.com/o/r/actions/runs/42"));
+    }
+
+    @Test
+    void parseWorkflowDispatchRejectsMalformedResponses() {
+        assertThatThrownBy(() -> GitHubApiClient.parseWorkflowDispatch(Map.of()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("workflow_run_id");
     }
 
     @Test

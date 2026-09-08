@@ -131,6 +131,45 @@ class RunControllerTest {
     }
 
     @Test
+    void releaseRequiresOpeningAPullRequest() throws Exception {
+        mvc.perform(post("/api/runs")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(new StartRunRequest("do a thing", "https://github.com/o/r",
+                                "direct", false, true))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("Release dispatch requires opening a pull request"));
+
+        verifyNoInteractions(registry);
+    }
+
+    @Test
+    void releaseRequiresAConfiguredWorkflow() throws Exception {
+        mvc.perform(post("/api/runs")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(new StartRunRequest("do a thing", "https://github.com/o/r",
+                                "direct", true, true))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("Release dispatch is not configured for this DevFlowAI instance"));
+
+        verifyNoInteractions(registry);
+    }
+
+    @Test
+    void configuredReleasePassesTheOptInThroughToTheRegistry() throws Exception {
+        mvc = MockMvcBuilders.standaloneSetup(
+                new RunController(registry, events, publishedEvents::add, history, configuredReleaseDispatcher())).build();
+        when(registry.start(any(), any(), any(), anyBoolean(), anyBoolean())).thenReturn(handleFor("release1"));
+
+        mvc.perform(post("/api/runs")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(new StartRunRequest("do a thing", "https://github.com/o/r",
+                                "direct", true, true))))
+                .andExpect(status().isOk());
+
+        verify(registry).start("do a thing", "https://github.com/o/r", RunStrategy.DIRECT, true, true);
+    }
+
+    @Test
     void streamingAnUnknownRunIs404() throws Exception {
         when(registry.find("nope")).thenReturn(null);
         mvc.perform(get("/api/runs/nope/stream")).andExpect(status().isNotFound());
@@ -205,6 +244,7 @@ class RunControllerTest {
         var older = new ai.devflow.history.SdlcRun("older", "fix a bug", "fixture",
                 ai.devflow.orchestrator.RunStrategy.DIRECT, java.time.Instant.now().minusSeconds(60));
         newer.recordCiStatus("PASSED");
+        newer.recordRelease("DISPATCHED", "https://github.com/o/r/actions/runs/7");
         when(history.findTop50ByOrderByStartedAtDesc()).thenReturn(java.util.List.of(newer, older));
 
         mvc.perform(get("/api/runs/history"))
@@ -214,7 +254,20 @@ class RunControllerTest {
                 .andExpect(jsonPath("$[0].status").value("RUNNING"))
                 .andExpect(jsonPath("$[0].strategy").value("ORCHESTRATED"))
                 .andExpect(jsonPath("$[0].ciStatus").value("PASSED"))
+                .andExpect(jsonPath("$[0].releaseStatus").value("DISPATCHED"))
+                .andExpect(jsonPath("$[0].releaseUrl").value("https://github.com/o/r/actions/runs/7"))
                 .andExpect(jsonPath("$[1].runId").value("older"))
                 .andExpect(jsonPath("$[1].strategy").value("DIRECT"));
+    }
+
+    private ReleaseDispatcher configuredReleaseDispatcher() {
+        return new ReleaseDispatcher() {
+            @Override public boolean isConfigured() { return true; }
+            @Override public String workflow() { return "release.yml"; }
+            @Override public String ref() { return "main"; }
+            @Override public ai.devflow.tools.WorkflowDispatchResult dispatch(String repoUrl) {
+                throw new UnsupportedOperationException();
+            }
+        };
     }
 }

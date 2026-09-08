@@ -243,6 +243,49 @@ class DirectExecutorTest {
                 .singleElement().extracting(event -> event.data().get("ciStatus")).isEqualTo("UNAVAILABLE");
     }
 
+    @Test
+    void requestedReleaseDispatchesOnlyAfterTheReleaseGateIsApproved() throws Exception {
+        var coder = writingCoder("done");
+        var captured = new ArrayList<Object>();
+        var recordingEvents = new RunEventPublisher(captured::add);
+        var dispatched = new AtomicInteger();
+        GitHubClient client = new GitHubClient() {
+            @Override public void push(ai.devflow.workspace.Workspace workspace, String branchName) { }
+            @Override public PullRequestResult openPullRequest(String repoUrl, String branchName, String title, String body) {
+                return new PullRequestResult("https://github.com/o/r/pull/11", 11);
+            }
+            @Override public boolean isPullRequestMerged(String repoUrl, int pullRequestNumber) { return true; }
+            @Override public ai.devflow.tools.WorkflowDispatchResult dispatchWorkflow(String repoUrl, String workflow, String ref) {
+                dispatched.incrementAndGet();
+                return new ai.devflow.tools.WorkflowDispatchResult(8L, "https://github.com/o/r/actions/runs/8");
+            }
+        };
+        CiObserver passedObserver = (repoUrl, ref, onUpdate) -> {
+            var observation = new CiObservation(CiStatus.PASSED, List.of());
+            onUpdate.accept(observation);
+            return observation;
+        };
+        var executor = new DirectExecutor(coder, recordingEvents, Duration.ofMinutes(1), client, passedObserver,
+                new GitHubActionsReleaseDispatcher(client, "release.yml", "main"));
+        var state = new RunState("dpr5", "t", workspace, "fixture", true, true);
+        var gate = new ApprovalGate(Duration.ofSeconds(10));
+        var pool = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            var outcome = pool.submit(() -> executor.run(state, gate));
+            while (gate.pending() != Gate.BEFORE_RELEASE) Thread.sleep(5);
+            gate.decide(ApprovalDecision.approve());
+
+            assertThat(outcome.get().approved()).isTrue();
+        } finally {
+            pool.shutdownNow();
+        }
+
+        assertThat(dispatched).hasValue(1);
+        var doneEvent = recordedEvents(captured).stream().filter(event -> "done".equals(event.type())).findFirst().orElseThrow();
+        assertThat(doneEvent.data()).containsEntry("releaseStatus", "DISPATCHED")
+                .containsEntry("releaseUrl", "https://github.com/o/r/actions/runs/8");
+    }
+
     private List<ai.devflow.event.RunEvent> recordedEvents(List<Object> captured) {
         return captured.stream()
                 .filter(ai.devflow.event.RunRecorded.class::isInstance)

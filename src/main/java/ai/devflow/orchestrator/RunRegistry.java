@@ -57,6 +57,10 @@ public class RunRegistry {
      *             already been reported started.
      */
     public RunHandle start(String task, String repo, RunStrategy strategy, boolean openPr) {
+        return start(task, repo, strategy, openPr, false);
+    }
+
+    public RunHandle start(String task, String repo, RunStrategy strategy, boolean openPr, boolean release) {
         String runId = UUID.randomUUID().toString().substring(0, 8);
         Workspace workspace;
         String repoSlug;
@@ -67,7 +71,7 @@ public class RunRegistry {
             workspace = new ClonedWorkspace(repo, runId, cloneTimeout);
             repoSlug = Slug.of(normalizeRepoUrl(repo));
         }
-        RunState state = new RunState(runId, task, workspace, repoSlug, openPr);
+        RunState state = new RunState(runId, task, workspace, repoSlug, openPr, release);
         ApprovalGate gate = new ApprovalGate(gateTimeout);
         RunExecutor selectedExecutor = strategy == RunStrategy.DIRECT ? directExecutor : orchestrator;
 

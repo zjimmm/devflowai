@@ -736,6 +736,43 @@ class OrchestratorTest {
                 "warn".equals(e.type()) && e.message().contains("Open it manually"))).isTrue();
     }
 
+    @Test
+    void requestedReleaseDispatchesAfterTheExistingGatesAndReleaseApproval() throws Exception {
+        var captured = new ArrayList<Object>();
+        var recordingEvents = new RunEventPublisher(captured::add);
+        var dispatched = new AtomicInteger();
+        GitHubClient client = new GitHubClient() {
+            @Override public void push(ai.devflow.workspace.Workspace workspace, String branchName) { }
+            @Override public PullRequestResult openPullRequest(String repoUrl, String branchName, String title, String body) {
+                return new PullRequestResult("https://github.com/o/r/pull/12", 12);
+            }
+            @Override public boolean isPullRequestMerged(String repoUrl, int pullRequestNumber) { return true; }
+            @Override public ai.devflow.tools.WorkflowDispatchResult dispatchWorkflow(String repoUrl, String workflow, String ref) {
+                dispatched.incrementAndGet();
+                return new ai.devflow.tools.WorkflowDispatchResult(9L, "https://github.com/o/r/actions/runs/9");
+            }
+        };
+        CiObserver passedObserver = (repoUrl, ref, onUpdate) -> {
+            var observation = new CiObservation(CiStatus.PASSED, List.of());
+            onUpdate.accept(observation);
+            return observation;
+        };
+        var orchestrator = new Orchestrator(writingCoder("done"), okReviewer(), planner,
+                (task, index) -> List.of(), (state, findings, reason) -> ScribeDraft.EMPTY,
+                new FakeSkillStore(), new FakeMemoryStore(), recordingEvents, 3, 5, Duration.ofMinutes(1),
+                policyEngine, client, passedObserver, new GitHubActionsReleaseDispatcher(client, "release.yml", "main"));
+        var state = new RunState("pr4", "t", workspace, "fixture", true, true);
+        var gate = new ApprovalGate(Duration.ofSeconds(10));
+
+        var outcome = runApprovingAll(orchestrator, state, gate);
+
+        assertThat(outcome.approved()).isTrue();
+        assertThat(dispatched).hasValue(1);
+        var doneEvent = recordedEvents(captured).stream().filter(event -> "done".equals(event.type())).findFirst().orElseThrow();
+        assertThat(doneEvent.data()).containsEntry("releaseStatus", "DISPATCHED")
+                .containsEntry("releaseUrl", "https://github.com/o/r/actions/runs/9");
+    }
+
     private List<ai.devflow.event.RunEvent> recordedEvents(List<Object> captured) {
         return captured.stream()
                 .filter(ai.devflow.event.RunRecorded.class::isInstance)

@@ -89,6 +89,20 @@ class SdlcRunRecorderTest {
     }
 
     @Test
+    void aReleaseEventRecordsItsStatusAndUrl() {
+        recorder.onRunRecorded(new RunRecorded("r-release", new RunEvent("step", "start",
+                Map.of("task", "t", "repoSlug", "fixture", "phase", "PREPARING", "strategy", "DIRECT"))));
+
+        recorder.onRunRecorded(new RunRecorded("r-release", new RunEvent("step", "dispatched",
+                Map.of("phase", "DISPATCHING_RELEASE", "releaseStatus", "DISPATCHED",
+                        "releaseUrl", "https://github.com/o/r/actions/runs/7"))));
+
+        var run = runs.findById("r-release").orElseThrow();
+        assertThat(run.releaseStatus()).isEqualTo("DISPATCHED");
+        assertThat(run.releaseUrl()).isEqualTo("https://github.com/o/r/actions/runs/7");
+    }
+
+    @Test
     void aDoneEventWithNoPrUrlLeavesItNull() {
         recorder.onRunRecorded(new RunRecorded("r14", new RunEvent("step", "start",
                 Map.of("task", "t", "repoSlug", "fixture", "phase", "PREPARING", "strategy", "DIRECT"))));

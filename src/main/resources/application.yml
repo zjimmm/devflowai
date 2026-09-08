@@ -26,3 +26,6 @@ devflowai:
     timeout-minutes: 2
   policy:
     require-build-pass: true
+  release:
+    workflow: ${DEVFLOWAI_RELEASE_WORKFLOW:}
+    ref: ${DEVFLOWAI_RELEASE_REF:main}

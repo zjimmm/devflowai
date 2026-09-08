@@ -24,4 +24,13 @@ public interface GitHubClient {
     default List<CiCheck> listCiChecks(String repoUrl, String ref) throws GitHubClientException {
         throw new GitHubClientException("CI check observation is not configured");
     }
+
+    default boolean isPullRequestMerged(String repoUrl, int pullRequestNumber) throws GitHubClientException {
+        throw new GitHubClientException("Pull request merge observation is not configured");
+    }
+
+    default WorkflowDispatchResult dispatchWorkflow(String repoUrl, String workflow, String ref)
+            throws GitHubClientException {
+        throw new GitHubClientException("Workflow dispatch is not configured");
+    }
 }

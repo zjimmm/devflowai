@@ -27,26 +27,34 @@ public class DirectExecutor implements RunExecutor {
     private final Duration buildTimeout;
     private final GitHubClient gitHubClient;
     private final CiObserver ciObserver;
+    private final ReleaseCoordinator releaseCoordinator;
 
     public DirectExecutor(Agent coder, RunEventPublisher events, Duration buildTimeout, GitHubClient gitHubClient) {
         this(coder, events, buildTimeout, gitHubClient,
-                (repoUrl, ref, onUpdate) -> { throw new GitHubClientException("CI check observation is not configured"); });
+                (repoUrl, ref, onUpdate) -> { throw new GitHubClientException("CI check observation is not configured"); },
+                ReleaseDispatcher.disabled());
     }
 
     public DirectExecutor(Agent coder, RunEventPublisher events, Duration buildTimeout, GitHubClient gitHubClient,
                           CiObserver ciObserver) {
+        this(coder, events, buildTimeout, gitHubClient, ciObserver, ReleaseDispatcher.disabled());
+    }
+
+    public DirectExecutor(Agent coder, RunEventPublisher events, Duration buildTimeout, GitHubClient gitHubClient,
+                          CiObserver ciObserver, ReleaseDispatcher releaseDispatcher) {
         this.coder = coder;
         this.events = events;
         this.buildTimeout = buildTimeout;
         this.gitHubClient = gitHubClient;
         this.ciObserver = ciObserver;
+        this.releaseCoordinator = new ReleaseCoordinator(gitHubClient, releaseDispatcher);
     }
 
     @Override
     public Orchestrator.RunOutcome run(RunState state, ApprovalGate gate) {
         String runId = state.runId();
         try {
-            return execute(state);
+            return execute(state, gate);
         } catch (RuntimeException e) {
             state.setPhase(RunPhase.FAILED);
             String reason = "Run failed: " + e;
@@ -58,7 +66,7 @@ public class DirectExecutor implements RunExecutor {
         }
     }
 
-    private Orchestrator.RunOutcome execute(RunState state) {
+    private Orchestrator.RunOutcome execute(RunState state, ApprovalGate gate) {
         emit(state, "step", "Workspace ready — branch " + state.workspace().branchName(),
                 Map.of("branch", state.workspace().branchName(),
                        "task", state.task(),
@@ -91,6 +99,7 @@ public class DirectExecutor implements RunExecutor {
         emit(state, "step", committed, Map.of());
 
         String prUrl = null;
+        Integer prNumber = null;
         if (state.openPr()) {
             state.setPhase(RunPhase.OPENING_PR);
             try {
@@ -105,6 +114,7 @@ public class DirectExecutor implements RunExecutor {
                         state.workspace().repoUrl(), state.workspace().branchName(),
                         content.title(), content.body());
                 prUrl = result.url();
+                prNumber = result.number();
                 emit(state, "step", "Pull request opened: " + prUrl, Map.of());
             } catch (GitHubClientException | RuntimeException e) {
                 emit(state, "warn", "Branch pushed, but opening the PR failed: " + e.getMessage()
@@ -113,6 +123,8 @@ public class DirectExecutor implements RunExecutor {
         }
 
         CiStatus ciStatus = observeCi(state, prUrl);
+        var releaseOutcome = releaseCoordinator.dispatchIfRequested(state, gate, prUrl, prNumber, ciStatus,
+                event -> emit(state, event.type(), event.message(), event.data()));
 
         state.setPhase(RunPhase.DONE);
         Map<String, Object> doneData = new HashMap<>();
@@ -121,6 +133,10 @@ public class DirectExecutor implements RunExecutor {
         doneData.put("outputTokens", state.totalTokens().output());
         if (prUrl != null) doneData.put("prUrl", prUrl);
         if (ciStatus != null) doneData.put("ciStatus", ciStatus.name());
+        releaseOutcome.ifPresent(outcome -> {
+            doneData.put("releaseStatus", outcome.status().name());
+            if (outcome.url() != null) doneData.put("releaseUrl", outcome.url());
+        });
         emit(state, "done", "Direct run committed on " + state.workspace().branchName(), doneData);
         return new Orchestrator.RunOutcome(true, "Direct run committed, no review", state);
     }

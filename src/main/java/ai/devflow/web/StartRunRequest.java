@@ -12,12 +12,16 @@ package ai.devflow.web;
  *               caller (tests included) that constructs this directly with
  *               fewer arguments keeps compiling unmodified.
  */
-public record StartRunRequest(String task, String repo, String strategy, Boolean openPr) {
+public record StartRunRequest(String task, String repo, String strategy, Boolean openPr, Boolean release) {
+    public StartRunRequest(String task, String repo, String strategy, Boolean openPr) {
+        this(task, repo, strategy, openPr, null);
+    }
+
     public StartRunRequest(String task, String repo, String strategy) {
-        this(task, repo, strategy, null);
+        this(task, repo, strategy, null, null);
     }
 
     public StartRunRequest(String task, String repo) {
-        this(task, repo, null, null);
+        this(task, repo, null, null, null);
     }
 }

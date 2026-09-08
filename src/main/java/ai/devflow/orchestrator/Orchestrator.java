@@ -51,6 +51,7 @@ public class Orchestrator implements RunExecutor {
     private final PolicyEngine policyEngine;
     private final GitHubClient gitHubClient;
     private final CiObserver ciObserver;
+    private final ReleaseCoordinator releaseCoordinator;
 
     public Orchestrator(Agent coder, Agent reviewer, Agent planner, SkillPicker skillPicker, Scribe scribe,
                         SkillStore skillStore, MemoryStore memoryStore,
@@ -58,7 +59,8 @@ public class Orchestrator implements RunExecutor {
                         Duration buildTimeout, PolicyEngine policyEngine, GitHubClient gitHubClient) {
         this(coder, reviewer, planner, skillPicker, scribe, skillStore, memoryStore, events,
                 maxReviewIterations, maxHumanIterations, buildTimeout, policyEngine, gitHubClient,
-                (repoUrl, ref, onUpdate) -> { throw new GitHubClientException("CI check observation is not configured"); });
+                (repoUrl, ref, onUpdate) -> { throw new GitHubClientException("CI check observation is not configured"); },
+                ReleaseDispatcher.disabled());
     }
 
     public Orchestrator(Agent coder, Agent reviewer, Agent planner, SkillPicker skillPicker, Scribe scribe,
@@ -66,6 +68,16 @@ public class Orchestrator implements RunExecutor {
                         RunEventPublisher events, int maxReviewIterations, int maxHumanIterations,
                         Duration buildTimeout, PolicyEngine policyEngine, GitHubClient gitHubClient,
                         CiObserver ciObserver) {
+        this(coder, reviewer, planner, skillPicker, scribe, skillStore, memoryStore, events,
+                maxReviewIterations, maxHumanIterations, buildTimeout, policyEngine, gitHubClient, ciObserver,
+                ReleaseDispatcher.disabled());
+    }
+
+    public Orchestrator(Agent coder, Agent reviewer, Agent planner, SkillPicker skillPicker, Scribe scribe,
+                        SkillStore skillStore, MemoryStore memoryStore,
+                        RunEventPublisher events, int maxReviewIterations, int maxHumanIterations,
+                        Duration buildTimeout, PolicyEngine policyEngine, GitHubClient gitHubClient,
+                        CiObserver ciObserver, ReleaseDispatcher releaseDispatcher) {
         this.coder = coder;
         this.reviewer = reviewer;
         this.planner = planner;
@@ -80,6 +92,7 @@ public class Orchestrator implements RunExecutor {
         this.policyEngine = policyEngine;
         this.gitHubClient = gitHubClient;
         this.ciObserver = ciObserver;
+        this.releaseCoordinator = new ReleaseCoordinator(gitHubClient, releaseDispatcher);
     }
 
     public RunOutcome run(RunState state, ApprovalGate gate) {
@@ -285,6 +298,7 @@ public class Orchestrator implements RunExecutor {
             emit(state, "step", committed, Map.of());
 
             String prUrl = null;
+            Integer prNumber = null;
             if (state.openPr()) {
                 state.setPhase(RunPhase.OPENING_PR);
                 try {
@@ -300,6 +314,7 @@ public class Orchestrator implements RunExecutor {
                             state.workspace().repoUrl(), state.workspace().branchName(),
                             content.title(), content.body());
                     prUrl = result.url();
+                    prNumber = result.number();
                     emit(state, "step", "Pull request opened: " + prUrl, Map.of());
                 } catch (GitHubClientException | RuntimeException e) {
                     emit(state, "warn", "Branch pushed, but opening the PR failed: " + e.getMessage()
@@ -308,6 +323,8 @@ public class Orchestrator implements RunExecutor {
             }
 
             CiStatus ciStatus = observeCi(state, prUrl);
+            var releaseOutcome = releaseCoordinator.dispatchIfRequested(state, gate, prUrl, prNumber, ciStatus,
+                    event -> emit(state, event.type(), event.message(), event.data()));
 
             state.setPhase(RunPhase.DONE);
             Map<String, Object> doneData = new HashMap<>();
@@ -316,6 +333,10 @@ public class Orchestrator implements RunExecutor {
             doneData.put("outputTokens", state.totalTokens().output());
             if (prUrl != null) doneData.put("prUrl", prUrl);
             if (ciStatus != null) doneData.put("ciStatus", ciStatus.name());
+            releaseOutcome.ifPresent(outcome -> {
+                doneData.put("releaseStatus", outcome.status().name());
+                if (outcome.url() != null) doneData.put("releaseUrl", outcome.url());
+            });
             emit(state, "done", "Approved and committed on " + state.workspace().branchName(), doneData);
             String outcomeReason = draftDeclinedByBareRejection
                     ? "Committed by operator; declined the proposed lesson"

@@ -8,6 +8,8 @@ import ai.devflow.orchestrator.Gate;
 import ai.devflow.orchestrator.RunHandle;
 import ai.devflow.orchestrator.RunRegistry;
 import ai.devflow.orchestrator.RunStrategy;
+import ai.devflow.orchestrator.ReleaseDispatcher;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -30,12 +32,20 @@ public class RunController {
     private final RunEventPublisher events;
     private final ApplicationEventPublisher applicationEvents;
     private final SdlcRunRepository history;
+    private final ReleaseDispatcher releaseDispatcher;
 
     public RunController(RunRegistry registry, RunEventPublisher events, ApplicationEventPublisher applicationEvents, SdlcRunRepository history) {
+        this(registry, events, applicationEvents, history, ReleaseDispatcher.disabled());
+    }
+
+    @Autowired
+    public RunController(RunRegistry registry, RunEventPublisher events, ApplicationEventPublisher applicationEvents,
+                         SdlcRunRepository history, ReleaseDispatcher releaseDispatcher) {
         this.registry = registry;
         this.events = events;
         this.applicationEvents = applicationEvents;
         this.history = history;
+        this.releaseDispatcher = releaseDispatcher;
     }
 
     @PostMapping
@@ -48,6 +58,11 @@ public class RunController {
         String rawStrategy = request.strategy() == null ? "" : request.strategy().trim();
         RunStrategy strategy = "direct".equalsIgnoreCase(rawStrategy) ? RunStrategy.DIRECT : RunStrategy.ORCHESTRATED;
         boolean openPr = Boolean.TRUE.equals(request.openPr());
+        boolean release = Boolean.TRUE.equals(request.release());
+        if (release && !openPr) {
+            return ResponseEntity.badRequest().body(
+                    Map.of("error", "Release dispatch requires opening a pull request"));
+        }
         if (openPr) {
             if ("fixture".equals(repo)) {
                 return ResponseEntity.badRequest().body(
@@ -58,9 +73,15 @@ public class RunController {
                         Map.of("error", "Opening a PR is only supported for github.com repositories, got: " + repo));
             }
         }
+        if (release && !releaseDispatcher.isConfigured()) {
+            return ResponseEntity.badRequest().body(
+                    Map.of("error", "Release dispatch is not configured for this DevFlowAI instance"));
+        }
         RunHandle handle;
         try {
-            handle = registry.start(request.task().trim(), repo, strategy, openPr);
+            handle = release
+                    ? registry.start(request.task().trim(), repo, strategy, openPr, true)
+                    : registry.start(request.task().trim(), repo, strategy, openPr);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }

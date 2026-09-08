@@ -6,8 +6,10 @@ import ai.devflow.memory.FileMemoryStore;
 import ai.devflow.memory.MemoryStore;
 import ai.devflow.orchestrator.DirectExecutor;
 import ai.devflow.orchestrator.CiObserver;
+import ai.devflow.orchestrator.GitHubActionsReleaseDispatcher;
 import ai.devflow.orchestrator.Orchestrator;
 import ai.devflow.orchestrator.PollingCiObserver;
+import ai.devflow.orchestrator.ReleaseDispatcher;
 import ai.devflow.orchestrator.RunExecutor;
 import ai.devflow.orchestrator.RunRegistry;
 import ai.devflow.policy.ConfigurablePolicyEngine;
@@ -122,22 +124,31 @@ public class OrchestrationConfig {
     }
 
     @Bean
+    ReleaseDispatcher releaseDispatcher(GitHubClient gitHubClient,
+                                        @Value("${devflowai.release.workflow:}") String workflow,
+                                        @Value("${devflowai.release.ref:main}") String ref) {
+        return new GitHubActionsReleaseDispatcher(gitHubClient, workflow, ref);
+    }
+
+    @Bean
     Orchestrator orchestrator(Agent coderAgent, Agent reviewerAgent, Agent plannerAgent, SkillPicker skillPicker, Scribe scribe,
                               SkillStore skillStore, MemoryStore memoryStore, RunEventPublisher events,
                               @Value("${devflowai.review.max-iterations:3}") int maxReviewIterations,
                               @Value("${devflowai.review.max-human-iterations:5}") int maxHumanIterations,
                               @Value("${devflowai.build.timeout-minutes:5}") long buildTimeoutMinutes,
-                              PolicyEngine policyEngine, GitHubClient gitHubClient, CiObserver ciObserver) {
+                              PolicyEngine policyEngine, GitHubClient gitHubClient, CiObserver ciObserver,
+                              ReleaseDispatcher releaseDispatcher) {
         return new Orchestrator(coderAgent, reviewerAgent, plannerAgent, skillPicker, scribe, skillStore, memoryStore,
                 events, maxReviewIterations, maxHumanIterations, Duration.ofMinutes(buildTimeoutMinutes), policyEngine,
-                gitHubClient, ciObserver);
+                gitHubClient, ciObserver, releaseDispatcher);
     }
 
     @Bean
     RunExecutor directExecutor(Agent coderAgent, RunEventPublisher events,
                               @Value("${devflowai.build.timeout-minutes:5}") long buildTimeoutMinutes,
-                              GitHubClient gitHubClient, CiObserver ciObserver) {
-        return new DirectExecutor(coderAgent, events, Duration.ofMinutes(buildTimeoutMinutes), gitHubClient, ciObserver);
+                              GitHubClient gitHubClient, CiObserver ciObserver, ReleaseDispatcher releaseDispatcher) {
+        return new DirectExecutor(coderAgent, events, Duration.ofMinutes(buildTimeoutMinutes), gitHubClient, ciObserver,
+                releaseDispatcher);
     }
 
     @Bean

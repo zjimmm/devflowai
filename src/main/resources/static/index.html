@@ -77,6 +77,12 @@
         Open a pull request when done (requires a real repo, not the bundled fixture)
       </label>
     </div>
+    <div class="row">
+      <label style="display:flex; align-items:center; gap:0.5rem;">
+        <input id="release" type="checkbox" style="width:auto;">
+        After passed CI and a manual PR merge, dispatch the configured release workflow
+      </label>
+    </div>
     <button id="run" class="primary">Run</button>
   </section>
 
@@ -88,7 +94,7 @@
     <h2 id="gate-title"></h2>
     <div id="gate-detail" class="files"></div>
     <div class="row" style="margin-top:0.8rem">
-      <label for="reason">reason (optional — a rejection with a reason sends it back to the coder)</label>
+      <label id="reason-label" for="reason">reason (optional — a rejection with a reason sends it back to the coder)</label>
       <input id="reason" placeholder="use a DTO, don't annotate the entity">
     </div>
     <div class="actions">
@@ -111,6 +117,7 @@
           <th>Build</th>
           <th>PR</th>
           <th>CI</th>
+          <th>Release</th>
           <th>Started</th>
         </tr>
       </thead>
@@ -152,6 +159,17 @@
       pr.appendChild(link);
       el.appendChild(pr);
     }
+    if (data && data.releaseUrl) {
+      const release = document.createElement('div');
+      release.className = 'files';
+      const link = document.createElement('a');
+      link.href = data.releaseUrl;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = 'View release workflow';
+      release.appendChild(link);
+      el.appendChild(release);
+    }
     if (data && Array.isArray(data.ciChecks) && data.ciChecks.length) {
       const checks = document.createElement('div');
       checks.className = 'files';
@@ -178,6 +196,9 @@
 
   function showGate(message, data) {
     $('gate-title').textContent = message;
+    $('reason-label').textContent = data && data.gate === 'BEFORE_RELEASE'
+      ? 'reason (optional — records why release was not dispatched)'
+      : 'reason (optional — a rejection with a reason sends it back to the coder)';
     const files = (data && data.filesTouched) || [];
     let detail = files.length ? files.join('\n') : '';
     if (data && data.skillDraft) {
@@ -256,7 +277,8 @@
     const res = await fetch('/api/runs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ task, repo, strategy: $('strategy').value, openPr: $('open-pr').checked })
+      body: JSON.stringify({ task, repo, strategy: $('strategy').value, openPr: $('open-pr').checked,
+        release: $('release').checked })
     });
     if (!res.ok) {
       log('error', `Could not start the run (HTTP ${res.status})`);
@@ -278,6 +300,13 @@
     };
     ['step', 'gate', 'done', 'error', 'aborted', 'warn'].forEach(n => source.addEventListener(n, onEvent));
     source.onerror = () => { source.close(); $('run').disabled = false; };
+  };
+
+  $('release').onchange = () => {
+    if ($('release').checked) $('open-pr').checked = true;
+  };
+  $('open-pr').onchange = () => {
+    if (!$('open-pr').checked) $('release').checked = false;
   };
 
   function renderHistory(rows) {
@@ -314,6 +343,18 @@
       const ciCell = document.createElement('td');
       ciCell.textContent = r.ciStatus || '';
 
+      const releaseCell = document.createElement('td');
+      if (r.releaseUrl) {
+        const releaseLink = document.createElement('a');
+        releaseLink.href = r.releaseUrl;
+        releaseLink.target = '_blank';
+        releaseLink.rel = 'noopener noreferrer';
+        releaseLink.textContent = r.releaseStatus || 'release';
+        releaseCell.appendChild(releaseLink);
+      } else {
+        releaseCell.textContent = r.releaseStatus || '';
+      }
+
       const startedCell = document.createElement('td');
       startedCell.textContent = new Date(r.startedAt).toLocaleString();
 
@@ -323,6 +364,7 @@
       tr.appendChild(buildCell);
       tr.appendChild(prCell);
       tr.appendChild(ciCell);
+      tr.appendChild(releaseCell);
       tr.appendChild(startedCell);
       body.appendChild(tr);
     });

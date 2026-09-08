@@ -44,6 +44,8 @@ public class SdlcRun {
     private Boolean buildSucceeded;
     private String prUrl;
     private String ciStatus;
+    private String releaseStatus;
+    private String releaseUrl;
 
     protected SdlcRun() {} // JPA
 
@@ -69,6 +71,8 @@ public class SdlcRun {
     public Boolean buildSucceeded() { return buildSucceeded; }
     public String prUrl() { return prUrl; }
     public String ciStatus() { return ciStatus; }
+    public String releaseStatus() { return releaseStatus; }
+    public String releaseUrl() { return releaseUrl; }
 
     public void finish(SdlcRunStatus status, String reason, Instant finishedAt, long inputTokens, long outputTokens) {
         this.status = status;
@@ -88,5 +92,10 @@ public class SdlcRun {
 
     public void recordCiStatus(String ciStatus) {
         this.ciStatus = ciStatus;
+    }
+
+    public void recordRelease(String releaseStatus, String releaseUrl) {
+        this.releaseStatus = releaseStatus;
+        if (releaseUrl != null) this.releaseUrl = releaseUrl;
     }
 }

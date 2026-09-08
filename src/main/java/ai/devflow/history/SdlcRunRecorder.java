@@ -52,6 +52,7 @@ public class SdlcRunRecorder {
             maybeRecordBuildResult(runId, data);
             maybeRecordPrUrl(runId, data);
             maybeRecordCiStatus(runId, data);
+            maybeRecordRelease(runId, data);
             maybeFinishRun(runId, recorded.event().type(), recorded.event().message(), data);
         } catch (RuntimeException e) {
             System.err.println("SdlcRunRecorder failed to record an event for run " + recorded.runId() + ": " + e);
@@ -101,6 +102,15 @@ public class SdlcRunRecorder {
         if (!(data.get("ciStatus") instanceof String ciStatus)) return;
         runs.findById(runId).ifPresent(run -> {
             run.recordCiStatus(ciStatus);
+            runs.save(run);
+        });
+    }
+
+    private void maybeRecordRelease(String runId, Map<String, Object> data) {
+        if (!(data.get("releaseStatus") instanceof String releaseStatus)) return;
+        String releaseUrl = data.get("releaseUrl") instanceof String url ? url : null;
+        runs.findById(runId).ifPresent(run -> {
+            run.recordRelease(releaseStatus, releaseUrl);
             runs.save(run);
         });
     }

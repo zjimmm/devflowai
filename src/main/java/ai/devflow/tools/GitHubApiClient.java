@@ -104,6 +104,52 @@ public class GitHubApiClient implements GitHubClient {
         }
     }
 
+    @Override
+    public boolean isPullRequestMerged(String repoUrl, int pullRequestNumber) throws GitHubClientException {
+        requireToken();
+        if (pullRequestNumber < 1) throw new IllegalArgumentException("pullRequestNumber must be positive");
+        OwnerRepo or = parseOwnerRepo(repoUrl);
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> response = restClient.get()
+                    .uri(API_BASE + "/repos/{owner}/{repo}/pulls/{pullRequestNumber}",
+                            or.owner(), or.repo(), pullRequestNumber)
+                    .header("Authorization", "Bearer " + token)
+                    .header("Accept", "application/vnd.github+json")
+                    .retrieve()
+                    .body(Map.class);
+            if (response == null || !(response.get("merged") instanceof Boolean merged)) {
+                throw new IllegalArgumentException("GitHub pull request response is missing merged");
+            }
+            return merged;
+        } catch (RuntimeException e) {
+            throw new GitHubClientException("Reading the pull request failed: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public WorkflowDispatchResult dispatchWorkflow(String repoUrl, String workflow, String ref)
+            throws GitHubClientException {
+        requireToken();
+        if (workflow == null || workflow.isBlank()) throw new IllegalArgumentException("workflow must not be blank");
+        if (ref == null || ref.isBlank()) throw new IllegalArgumentException("ref must not be blank");
+        OwnerRepo or = parseOwnerRepo(repoUrl);
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> response = restClient.post()
+                    .uri(API_BASE + "/repos/{owner}/{repo}/actions/workflows/{workflow}/dispatches",
+                            or.owner(), or.repo(), workflow)
+                    .header("Authorization", "Bearer " + token)
+                    .header("Accept", "application/vnd.github+json")
+                    .body(Map.of("ref", ref, "return_run_details", true))
+                    .retrieve()
+                    .body(Map.class);
+            return parseWorkflowDispatch(response);
+        } catch (RuntimeException e) {
+            throw new GitHubClientException("Dispatching the release workflow failed: " + e.getMessage(), e);
+        }
+    }
+
     private void requireToken() throws GitHubClientException {
         if (token == null || token.isBlank()) {
             throw new GitHubClientException("DEVFLOWAI_GITHUB_TOKEN is not set");
@@ -146,5 +192,13 @@ public class GitHubApiClient implements GitHubClient {
                     detailsUrl instanceof String valueDetailsUrl ? valueDetailsUrl : null));
         }
         return List.copyOf(checks);
+    }
+
+    static WorkflowDispatchResult parseWorkflowDispatch(Map<String, Object> response) {
+        if (response == null || !(response.get("workflow_run_id") instanceof Number runId)) {
+            throw new IllegalArgumentException("GitHub dispatch response is missing workflow_run_id");
+        }
+        Object htmlUrl = response.get("html_url");
+        return new WorkflowDispatchResult(runId.longValue(), htmlUrl instanceof String url ? url : null);
     }
 }
