@@ -47,6 +47,8 @@ public class SdlcRun {
     private String releaseStatus;
     private String releaseUrl;
     private String verificationStatus;
+    private String rollbackStatus;
+    private String rollbackUrl;
 
     protected SdlcRun() {} // JPA
 
@@ -75,6 +77,8 @@ public class SdlcRun {
     public String releaseStatus() { return releaseStatus; }
     public String releaseUrl() { return releaseUrl; }
     public String verificationStatus() { return verificationStatus; }
+    public String rollbackStatus() { return rollbackStatus; }
+    public String rollbackUrl() { return rollbackUrl; }
 
     public void finish(SdlcRunStatus status, String reason, Instant finishedAt, long inputTokens, long outputTokens) {
         this.status = status;
@@ -103,5 +107,10 @@ public class SdlcRun {
 
     public void recordVerificationStatus(String verificationStatus) {
         this.verificationStatus = verificationStatus;
+    }
+
+    public void recordRollback(String rollbackStatus, String rollbackUrl) {
+        this.rollbackStatus = rollbackStatus;
+        if (rollbackUrl != null) this.rollbackUrl = rollbackUrl;
     }
 }

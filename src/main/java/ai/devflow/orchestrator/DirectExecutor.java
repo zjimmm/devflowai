@@ -48,12 +48,19 @@ public class DirectExecutor implements RunExecutor {
 
     public DirectExecutor(Agent coder, RunEventPublisher events, Duration buildTimeout, GitHubClient gitHubClient,
                           CiObserver ciObserver, ReleaseDispatcher releaseDispatcher, ReleaseObserver releaseObserver) {
+        this(coder, events, buildTimeout, gitHubClient, ciObserver, releaseDispatcher, releaseObserver,
+                RollbackDispatcher.disabled());
+    }
+
+    public DirectExecutor(Agent coder, RunEventPublisher events, Duration buildTimeout, GitHubClient gitHubClient,
+                          CiObserver ciObserver, ReleaseDispatcher releaseDispatcher, ReleaseObserver releaseObserver,
+                          RollbackDispatcher rollbackDispatcher) {
         this.coder = coder;
         this.events = events;
         this.buildTimeout = buildTimeout;
         this.gitHubClient = gitHubClient;
         this.ciObserver = ciObserver;
-        this.releaseCoordinator = new ReleaseCoordinator(gitHubClient, releaseDispatcher, releaseObserver);
+        this.releaseCoordinator = new ReleaseCoordinator(gitHubClient, releaseDispatcher, releaseObserver, rollbackDispatcher);
     }
 
     @Override
@@ -145,6 +152,10 @@ public class DirectExecutor implements RunExecutor {
             if (outcome.verificationStatus() != null) {
                 doneData.put("verificationStatus", outcome.verificationStatus().name());
             }
+            if (outcome.rollbackStatus() != null) {
+                doneData.put("rollbackStatus", outcome.rollbackStatus().name());
+            }
+            if (outcome.rollbackUrl() != null) doneData.put("rollbackUrl", outcome.rollbackUrl());
         });
         emit(state, "done", "Direct run committed on " + state.workspace().branchName(), doneData);
         return new Orchestrator.RunOutcome(true, "Direct run committed, no review", state);

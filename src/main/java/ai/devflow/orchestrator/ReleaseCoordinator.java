@@ -12,24 +12,33 @@ import java.util.function.Consumer;
 public class ReleaseCoordinator {
 
     public record ReleaseOutcome(ReleaseStatus status, String url, Long workflowRunId,
-                                 VerificationStatus verificationStatus) {}
+                                 VerificationStatus verificationStatus, RollbackStatus rollbackStatus,
+                                 String rollbackUrl) {}
 
     public record ReleaseEvent(String type, String message, Map<String, Object> data) {}
 
     private final GitHubClient gitHubClient;
     private final ReleaseDispatcher releaseDispatcher;
     private final ReleaseObserver releaseObserver;
+    private final RollbackDispatcher rollbackDispatcher;
 
     public ReleaseCoordinator(GitHubClient gitHubClient, ReleaseDispatcher releaseDispatcher) {
         this(gitHubClient, releaseDispatcher,
-                (repoUrl, workflowRunId, onUpdate) -> { throw new GitHubClientException("Release verification is not configured"); });
+                (repoUrl, workflowRunId, onUpdate) -> { throw new GitHubClientException("Release verification is not configured"); },
+                RollbackDispatcher.disabled());
     }
 
     public ReleaseCoordinator(GitHubClient gitHubClient, ReleaseDispatcher releaseDispatcher,
                               ReleaseObserver releaseObserver) {
+        this(gitHubClient, releaseDispatcher, releaseObserver, RollbackDispatcher.disabled());
+    }
+
+    public ReleaseCoordinator(GitHubClient gitHubClient, ReleaseDispatcher releaseDispatcher,
+                              ReleaseObserver releaseObserver, RollbackDispatcher rollbackDispatcher) {
         this.gitHubClient = gitHubClient;
         this.releaseDispatcher = releaseDispatcher;
         this.releaseObserver = releaseObserver;
+        this.rollbackDispatcher = rollbackDispatcher;
     }
 
     public Optional<ReleaseOutcome> dispatchIfRequested(RunState state, ApprovalGate gate,
@@ -53,7 +62,7 @@ public class ReleaseCoordinator {
         if (!gate.await(Gate.BEFORE_RELEASE).approved()) {
             publish.accept(new ReleaseEvent("step", "Release was not approved; no workflow was dispatched.",
                     Map.of("releaseStatus", ReleaseStatus.SKIPPED.name())));
-            return Optional.of(new ReleaseOutcome(ReleaseStatus.SKIPPED, null, null, null));
+            return Optional.of(new ReleaseOutcome(ReleaseStatus.SKIPPED, null, null, null, null, null));
         }
 
         try {
@@ -72,12 +81,13 @@ public class ReleaseCoordinator {
             if (result.htmlUrl() != null) data.put("releaseUrl", result.htmlUrl());
             publish.accept(new ReleaseEvent("step", "Release workflow dispatched.", data));
             VerificationStatus verificationStatus = observeDeployment(state, result, publish);
+            RollbackOutcome rollbackOutcome = dispatchRollbackIfNeeded(state, gate, verificationStatus, publish);
             return Optional.of(new ReleaseOutcome(ReleaseStatus.DISPATCHED, result.htmlUrl(),
-                    result.workflowRunId(), verificationStatus));
+                    result.workflowRunId(), verificationStatus, rollbackOutcome.status(), rollbackOutcome.url()));
         } catch (GitHubClientException | RuntimeException e) {
             publish.accept(new ReleaseEvent("warn", "Release dispatch failed: " + e.getMessage()
                     + ". Inspect GitHub Actions manually.", Map.of("releaseStatus", ReleaseStatus.FAILED.name())));
-            return Optional.of(new ReleaseOutcome(ReleaseStatus.FAILED, null, null, null));
+            return Optional.of(new ReleaseOutcome(ReleaseStatus.FAILED, null, null, null, null, null));
         }
     }
 
@@ -105,6 +115,45 @@ public class ReleaseCoordinator {
         }
     }
 
+    private RollbackOutcome dispatchRollbackIfNeeded(RunState state, ApprovalGate gate,
+                                                     VerificationStatus verificationStatus,
+                                                     Consumer<ReleaseEvent> publish) {
+        if (verificationStatus != VerificationStatus.FAILED) return RollbackOutcome.notRequired();
+        if (!rollbackDispatcher.isConfigured()) {
+            publish.accept(new ReleaseEvent("warn",
+                    "Deployment verification failed and no rollback workflow is configured. Intervene manually.",
+                    Map.of("rollbackStatus", RollbackStatus.UNAVAILABLE.name())));
+            return new RollbackOutcome(RollbackStatus.UNAVAILABLE, null);
+        }
+
+        state.setPhase(RunPhase.WAITING_FOR_ROLLBACK_APPROVAL);
+        publish.accept(new ReleaseEvent("gate",
+                "Deployment verification failed. Approve rollback workflow dispatch.",
+                Map.of("gate", Gate.BEFORE_ROLLBACK.name(), "workflow", rollbackDispatcher.workflow(),
+                        "ref", rollbackDispatcher.ref(), "verificationStatus", VerificationStatus.FAILED.name())));
+        if (!gate.await(Gate.BEFORE_ROLLBACK).approved()) {
+            publish.accept(new ReleaseEvent("step", "Rollback was not approved; no rollback workflow was dispatched.",
+                    Map.of("rollbackStatus", RollbackStatus.SKIPPED.name())));
+            return new RollbackOutcome(RollbackStatus.SKIPPED, null);
+        }
+
+        state.setPhase(RunPhase.DISPATCHING_ROLLBACK);
+        try {
+            WorkflowDispatchResult result = rollbackDispatcher.dispatch(state.workspace().repoUrl());
+            Map<String, Object> data = new HashMap<>();
+            data.put("rollbackStatus", RollbackStatus.DISPATCHED.name());
+            data.put("workflow", rollbackDispatcher.workflow());
+            data.put("ref", rollbackDispatcher.ref());
+            if (result.htmlUrl() != null) data.put("rollbackUrl", result.htmlUrl());
+            publish.accept(new ReleaseEvent("step", "Rollback workflow dispatched.", data));
+            return new RollbackOutcome(RollbackStatus.DISPATCHED, result.htmlUrl());
+        } catch (GitHubClientException | RuntimeException e) {
+            publish.accept(new ReleaseEvent("warn", "Rollback dispatch failed: " + e.getMessage()
+                    + ". Intervene manually.", Map.of("rollbackStatus", RollbackStatus.FAILED.name())));
+            return new RollbackOutcome(RollbackStatus.FAILED, null);
+        }
+    }
+
     private String verificationMessage(VerificationStatus status) {
         return switch (status) {
             case PENDING -> "Waiting for release workflow verification…";
@@ -117,6 +166,12 @@ public class ReleaseCoordinator {
 
     private ReleaseOutcome blocked(Consumer<ReleaseEvent> publish, String message) {
         publish.accept(new ReleaseEvent("warn", message, Map.of("releaseStatus", ReleaseStatus.BLOCKED.name())));
-        return new ReleaseOutcome(ReleaseStatus.BLOCKED, null, null, null);
+        return new ReleaseOutcome(ReleaseStatus.BLOCKED, null, null, null, null, null);
+    }
+
+    private record RollbackOutcome(RollbackStatus status, String url) {
+        private static RollbackOutcome notRequired() {
+            return new RollbackOutcome(null, null);
+        }
     }
 }

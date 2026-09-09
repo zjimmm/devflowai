@@ -392,7 +392,7 @@
         <div class="archive-head"><div><p class="eyebrow">History</p><h2>Recent SDLC runs</h2></div><button id="history-refresh" class="button-secondary" type="button">Refresh</button></div>
         <div class="table-wrap">
           <table class="archive-table">
-            <thead><tr><th>Task</th><th>Strategy</th><th>Status</th><th>Build</th><th>PR</th><th>CI</th><th>Release</th><th>Verify</th><th>Audit</th><th>Started</th></tr></thead>
+            <thead><tr><th>Task</th><th>Strategy</th><th>Status</th><th>Build</th><th>PR</th><th>CI</th><th>Release</th><th>Verify</th><th>Rollback</th><th>Audit</th><th>Started</th></tr></thead>
             <tbody id="history-body"></tbody>
           </table>
         </div>
@@ -413,7 +413,7 @@
     { id: 'forge', label: 'Forge', phases: ['CODING'] },
     { id: 'inspect', label: 'Inspect', phases: ['REVIEWING'] },
     { id: 'quality', label: 'Quality', phases: ['BUILDING'] },
-    { id: 'ship', label: 'Ship', phases: ['COMMITTING', 'OPENING_PR', 'VALIDATING_CI', 'WAITING_FOR_RELEASE_APPROVAL', 'VERIFYING_RELEASE_PR', 'DISPATCHING_RELEASE', 'VERIFYING_DEPLOYMENT'] },
+    { id: 'ship', label: 'Ship', phases: ['COMMITTING', 'OPENING_PR', 'VALIDATING_CI', 'WAITING_FOR_RELEASE_APPROVAL', 'VERIFYING_RELEASE_PR', 'DISPATCHING_RELEASE', 'VERIFYING_DEPLOYMENT', 'WAITING_FOR_ROLLBACK_APPROVAL', 'DISPATCHING_ROLLBACK'] },
     { id: 'complete', label: 'Close', phases: ['DONE'] }
   ];
   const agentForPhase = {
@@ -427,7 +427,9 @@
     WAITING_FOR_RELEASE_APPROVAL: ['delivery', 'Awaiting release approval'],
     VERIFYING_RELEASE_PR: ['delivery', 'Confirming merge'],
     DISPATCHING_RELEASE: ['delivery', 'Dispatching release'],
-    VERIFYING_DEPLOYMENT: ['delivery', 'Verifying delivery']
+    VERIFYING_DEPLOYMENT: ['delivery', 'Verifying delivery'],
+    WAITING_FOR_ROLLBACK_APPROVAL: ['delivery', 'Awaiting rollback approval'],
+    DISPATCHING_ROLLBACK: ['delivery', 'Dispatching rollback']
   };
   let runId = null;
   let currentStageId = null;
@@ -567,6 +569,7 @@
     if (data && data.ciStatus) $('metric-ci').textContent = titleCase(data.ciStatus);
     if (data && data.releaseStatus) $('metric-delivery').textContent = titleCase(data.releaseStatus);
     if (data && data.verificationStatus) $('metric-delivery').textContent = `Verified: ${titleCase(data.verificationStatus)}`;
+    if (data && data.rollbackStatus) $('metric-delivery').textContent = `Rollback: ${titleCase(data.rollbackStatus)}`;
     if (type === 'gate') setRunState('Approval required', 'waiting');
     else if (type === 'done') setRunState('Run complete', 'complete');
     else if (type === 'error' || type === 'aborted') setRunState('Run stopped', 'failed');
@@ -625,6 +628,10 @@
       const link = safeLink(data.releaseUrl, 'View release workflow');
       if (link) appendEventDetail(event, link);
     }
+    if (data.rollbackUrl) {
+      const link = safeLink(data.rollbackUrl, 'View rollback workflow');
+      if (link) appendEventDetail(event, link);
+    }
     if (Array.isArray(data.ciChecks)) {
       data.ciChecks.forEach(check => {
         const label = `${check.name}: ${check.status}${check.conclusion ? ` (${check.conclusion})` : ''}`;
@@ -639,7 +646,9 @@
     $('gate-title').textContent = message;
     $('reason-label').textContent = data && data.gate === 'BEFORE_RELEASE'
       ? 'Decision note (optional — records why release was not dispatched)'
-      : 'Decision note (optional — sends feedback to the workflow)';
+      : data && data.gate === 'BEFORE_ROLLBACK'
+        ? 'Decision note (optional — records why rollback was not dispatched)'
+        : 'Decision note (optional — sends feedback to the workflow)';
     const details = [];
     if (Array.isArray(data && data.filesTouched) && data.filesTouched.length) details.push(data.filesTouched.join('\n'));
     if (data && data.skillDraft) details.push(`Learned: ${data.skillDraft.name} — ${data.skillDraft.description}`);
@@ -755,13 +764,15 @@
       const release = document.createElement('td');
       release.append(safeLink(run.releaseUrl, run.releaseStatus || 'Release') || document.createTextNode(run.releaseStatus || '—'));
       const verification = document.createElement('td'); verification.textContent = run.verificationStatus || '—';
+      const rollback = document.createElement('td');
+      rollback.append(safeLink(run.rollbackUrl, run.rollbackStatus || 'Rollback') || document.createTextNode(run.rollbackStatus || '—'));
       const audit = document.createElement('td');
       const auditButton = document.createElement('button');
       auditButton.type = 'button'; auditButton.className = 'button-secondary'; auditButton.textContent = 'View';
       auditButton.onclick = () => loadAudit(run.runId);
       audit.appendChild(auditButton);
       const started = document.createElement('td'); started.textContent = new Date(run.startedAt).toLocaleString();
-      row.append(task, strategy, status, build, pr, ci, release, verification, audit, started);
+      row.append(task, strategy, status, build, pr, ci, release, verification, rollback, audit, started);
       body.appendChild(row);
     });
   }

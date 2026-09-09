@@ -31,3 +31,6 @@ devflowai:
     ref: ${DEVFLOWAI_RELEASE_REF:main}
     poll-interval-seconds: 5
     verification-timeout-minutes: 20
+  rollback:
+    workflow: ${DEVFLOWAI_ROLLBACK_WORKFLOW:}
+    ref: ${DEVFLOWAI_ROLLBACK_REF:main}

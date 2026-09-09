@@ -161,6 +161,20 @@ class SdlcRunRecorderTest {
     }
 
     @Test
+    void aRollbackEventRecordsItsStatusAndUrl() {
+        recorder.onRunRecorded(new RunRecorded("r-rollback", new RunEvent("step", "start",
+                Map.of("task", "t", "repoSlug", "fixture", "phase", "PREPARING", "strategy", "DIRECT"))));
+
+        recorder.onRunRecorded(new RunRecorded("r-rollback", new RunEvent("step", "dispatched",
+                Map.of("phase", "DISPATCHING_ROLLBACK", "rollbackStatus", "DISPATCHED",
+                        "rollbackUrl", "https://github.com/o/r/actions/runs/8"))));
+
+        var run = runs.findById("r-rollback").orElseThrow();
+        assertThat(run.rollbackStatus()).isEqualTo("DISPATCHED");
+        assertThat(run.rollbackUrl()).isEqualTo("https://github.com/o/r/actions/runs/8");
+    }
+
+    @Test
     void aDoneEventWithNoPrUrlLeavesItNull() {
         recorder.onRunRecorded(new RunRecorded("r14", new RunEvent("step", "start",
                 Map.of("task", "t", "repoSlug", "fixture", "phase", "PREPARING", "strategy", "DIRECT"))));

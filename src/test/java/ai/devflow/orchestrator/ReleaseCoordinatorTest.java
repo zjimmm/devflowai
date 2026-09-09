@@ -37,7 +37,7 @@ class ReleaseCoordinatorTest {
 
         Future<Optional<ReleaseCoordinator.ReleaseOutcome>> future = pool.submit(() -> coordinator.dispatchIfRequested(
                 releaseState(), gate, "https://github.com/o/r/pull/9", 9, CiStatus.PASSED, events::add));
-        awaitGate(gate);
+        awaitGate(gate, Gate.BEFORE_RELEASE);
         gate.decide(ApprovalDecision.approve());
 
         var outcome = future.get().orElseThrow();
@@ -57,7 +57,7 @@ class ReleaseCoordinatorTest {
 
         Future<Optional<ReleaseCoordinator.ReleaseOutcome>> future = pool.submit(() -> coordinator.dispatchIfRequested(
                 releaseState(), gate, "https://github.com/o/r/pull/9", 9, CiStatus.PASSED, event -> { }));
-        awaitGate(gate);
+        awaitGate(gate, Gate.BEFORE_RELEASE);
         gate.decide(ApprovalDecision.reject());
 
         assertThat(future.get().orElseThrow().status()).isEqualTo(ReleaseStatus.SKIPPED);
@@ -79,7 +79,7 @@ class ReleaseCoordinatorTest {
         var gate = new ApprovalGate(Duration.ofSeconds(5));
         Future<Optional<ReleaseCoordinator.ReleaseOutcome>> future = pool.submit(() -> coordinator(unmergedClient)
                 .dispatchIfRequested(releaseState(), gate, "https://github.com/o/r/pull/9", 9, CiStatus.PASSED, event -> { }));
-        awaitGate(gate);
+        awaitGate(gate, Gate.BEFORE_RELEASE);
         gate.decide(ApprovalDecision.approve());
 
         assertThat(future.get().orElseThrow().status()).isEqualTo(ReleaseStatus.BLOCKED);
@@ -100,7 +100,7 @@ class ReleaseCoordinatorTest {
 
         Future<Optional<ReleaseCoordinator.ReleaseOutcome>> future = pool.submit(() -> coordinator.dispatchIfRequested(
                 releaseState(), gate, "https://github.com/o/r/pull/9", 9, CiStatus.PASSED, events::add));
-        awaitGate(gate);
+        awaitGate(gate, Gate.BEFORE_RELEASE);
         gate.decide(ApprovalDecision.approve());
 
         var outcome = future.get().orElseThrow();
@@ -108,6 +108,71 @@ class ReleaseCoordinatorTest {
         assertThat(outcome.verificationStatus()).isEqualTo(VerificationStatus.UNAVAILABLE);
         assertThat(client.dispatches).isEqualTo(1);
         assertThat(events).anyMatch(event -> event.message().contains("Release verification failed"));
+    }
+
+    @Test
+    void failedDeploymentRequiresSeparateRollbackApprovalBeforeDispatch() throws Exception {
+        var client = new RecordingClient(true);
+        var coordinator = new ReleaseCoordinator(client,
+                new GitHubActionsReleaseDispatcher(client, "release.yml", "main"), failedObserver(),
+                new GitHubActionsRollbackDispatcher(client, "rollback.yml", "main"));
+        var gate = new ApprovalGate(Duration.ofSeconds(5));
+        var events = new ArrayList<ReleaseCoordinator.ReleaseEvent>();
+
+        Future<Optional<ReleaseCoordinator.ReleaseOutcome>> future = pool.submit(() -> coordinator.dispatchIfRequested(
+                releaseState(), gate, "https://github.com/o/r/pull/9", 9, CiStatus.PASSED, events::add));
+        awaitGate(gate, Gate.BEFORE_RELEASE);
+        gate.decide(ApprovalDecision.approve());
+        awaitGate(gate, Gate.BEFORE_ROLLBACK);
+        gate.decide(ApprovalDecision.approve());
+
+        var outcome = future.get().orElseThrow();
+        assertThat(outcome.status()).isEqualTo(ReleaseStatus.DISPATCHED);
+        assertThat(outcome.verificationStatus()).isEqualTo(VerificationStatus.FAILED);
+        assertThat(outcome.rollbackStatus()).isEqualTo(RollbackStatus.DISPATCHED);
+        assertThat(outcome.rollbackUrl()).isEqualTo("https://github.com/o/r/actions/runs/7");
+        assertThat(client.workflows).containsExactly("release.yml", "rollback.yml");
+        assertThat(events).anyMatch(event -> Gate.BEFORE_ROLLBACK.name().equals(event.data().get("gate")));
+    }
+
+    @Test
+    void rejectedRollbackDoesNotDispatchIt() throws Exception {
+        var client = new RecordingClient(true);
+        var coordinator = new ReleaseCoordinator(client,
+                new GitHubActionsReleaseDispatcher(client, "release.yml", "main"), failedObserver(),
+                new GitHubActionsRollbackDispatcher(client, "rollback.yml", "main"));
+        var gate = new ApprovalGate(Duration.ofSeconds(5));
+
+        Future<Optional<ReleaseCoordinator.ReleaseOutcome>> future = pool.submit(() -> coordinator.dispatchIfRequested(
+                releaseState(), gate, "https://github.com/o/r/pull/9", 9, CiStatus.PASSED, event -> { }));
+        awaitGate(gate, Gate.BEFORE_RELEASE);
+        gate.decide(ApprovalDecision.approve());
+        awaitGate(gate, Gate.BEFORE_ROLLBACK);
+        gate.decide(ApprovalDecision.reject());
+
+        var outcome = future.get().orElseThrow();
+        assertThat(outcome.rollbackStatus()).isEqualTo(RollbackStatus.SKIPPED);
+        assertThat(client.workflows).containsExactly("release.yml");
+    }
+
+    @Test
+    void failedDeploymentWithoutARollbackWorkflowRequiresManualIntervention() throws Exception {
+        var client = new RecordingClient(true);
+        var coordinator = new ReleaseCoordinator(client,
+                new GitHubActionsReleaseDispatcher(client, "release.yml", "main"), failedObserver());
+        var gate = new ApprovalGate(Duration.ofSeconds(5));
+        var events = new ArrayList<ReleaseCoordinator.ReleaseEvent>();
+
+        Future<Optional<ReleaseCoordinator.ReleaseOutcome>> future = pool.submit(() -> coordinator.dispatchIfRequested(
+                releaseState(), gate, "https://github.com/o/r/pull/9", 9, CiStatus.PASSED, events::add));
+        awaitGate(gate, Gate.BEFORE_RELEASE);
+        gate.decide(ApprovalDecision.approve());
+
+        var outcome = future.get().orElseThrow();
+        assertThat(outcome.verificationStatus()).isEqualTo(VerificationStatus.FAILED);
+        assertThat(outcome.rollbackStatus()).isEqualTo(RollbackStatus.UNAVAILABLE);
+        assertThat(client.workflows).containsExactly("release.yml");
+        assertThat(events).anyMatch(event -> event.message().contains("no rollback workflow is configured"));
     }
 
     private ReleaseCoordinator coordinator(RecordingClient client) {
@@ -119,6 +184,15 @@ class ReleaseCoordinatorTest {
         };
         return new ReleaseCoordinator(client, new GitHubActionsReleaseDispatcher(client, "release.yml", "main"),
                 passedObserver);
+    }
+
+    private ReleaseObserver failedObserver() {
+        return (repoUrl, workflowRunId, onUpdate) -> {
+            var observation = new ReleaseObservation(VerificationStatus.FAILED,
+                    new ai.devflow.tools.WorkflowRun("completed", "failure", "https://github.com/o/r/actions/runs/7"));
+            onUpdate.accept(observation);
+            return observation;
+        };
     }
 
     private RunState releaseState() {
@@ -136,10 +210,10 @@ class ReleaseCoordinatorTest {
         };
     }
 
-    private void awaitGate(ApprovalGate gate) throws InterruptedException {
+    private void awaitGate(ApprovalGate gate, Gate expectedGate) throws InterruptedException {
         long deadline = System.currentTimeMillis() + 5_000;
-        while (gate.pending() != Gate.BEFORE_RELEASE) {
-            if (System.currentTimeMillis() > deadline) throw new AssertionError("release gate was never reached");
+        while (gate.pending() != expectedGate) {
+            if (System.currentTimeMillis() > deadline) throw new AssertionError(expectedGate + " gate was never reached");
             Thread.sleep(5);
         }
     }
@@ -148,6 +222,7 @@ class ReleaseCoordinatorTest {
         private final boolean merged;
         int mergeChecks;
         int dispatches;
+        final List<String> workflows = new ArrayList<>();
 
         RecordingClient(boolean merged) {
             this.merged = merged;
@@ -163,6 +238,7 @@ class ReleaseCoordinatorTest {
         }
         @Override public WorkflowDispatchResult dispatchWorkflow(String repoUrl, String workflow, String ref) {
             dispatches++;
+            workflows.add(workflow);
             return new WorkflowDispatchResult(7L, "https://github.com/o/r/actions/runs/7");
         }
     }
