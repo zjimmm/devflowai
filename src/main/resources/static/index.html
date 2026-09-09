@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>DevFlowAI · Guild Command</title>
+  <title>DevFlowAI · Agent Operations</title>
   <style>
     :root {
       color-scheme: dark;
@@ -21,7 +21,9 @@
       --rose: #fa748a;
       --green: #79e7a9;
       --pixel-border: 2px solid var(--line);
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      --font-ui: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --font-display: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-family: var(--font-ui);
     }
 
     * { box-sizing: border-box; }
@@ -34,7 +36,7 @@
         linear-gradient(90deg, rgba(94, 118, 194, 0.055) 1px, transparent 1px),
         radial-gradient(circle at 70% 5%, #182a5a 0, transparent 29rem),
         var(--night);
-      background-size: 24px 24px, 24px 24px, auto, auto;
+      background-size: 32px 32px, 32px 32px, auto, auto;
       color: var(--ink);
       font-size: 16px;
       line-height: 1.5;
@@ -49,8 +51,9 @@
     }
     a { color: var(--cyan); }
     h1, h2, h3, p { margin-top: 0; }
+    h1, h2, h3, .eyebrow, .status-badge, .run-state, .nav-index { font-family: var(--font-display); }
 
-    .app-shell { display: grid; grid-template-columns: 18rem minmax(0, 1fr); min-height: 100vh; }
+    .app-shell { display: grid; grid-template-columns: 15rem minmax(0, 1fr); min-height: 100vh; }
     .side-rail {
       position: sticky;
       top: 0;
@@ -58,7 +61,7 @@
       display: flex;
       flex-direction: column;
       min-height: 100vh;
-      padding: 1.5rem 1rem;
+      padding: 1.25rem 1rem;
       background: rgba(5, 10, 31, 0.96);
       border-right: var(--pixel-border);
       box-shadow: 3px 0 0 rgba(91, 121, 194, 0.22);
@@ -77,10 +80,10 @@
     }
     .brand-mark strong { display: block; font-size: 1.15rem; letter-spacing: 0.04em; }
     .brand-mark small, .rail-note, .eyebrow { color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; }
-    .brand-mark small { font-size: 0.66rem; }
+    .brand-mark small { font-size: 0.75rem; }
     .mission-plaque {
-      margin: 2.25rem 0 1.5rem;
-      padding: 1.25rem 0.9rem;
+      margin: 1.75rem 0 1.25rem;
+      padding: 1rem 0.8rem;
       text-align: center;
       color: var(--ink);
       border: 2px solid var(--line-bright);
@@ -90,9 +93,9 @@
       letter-spacing: 0.16em;
       text-transform: uppercase;
     }
-    .live-signal { display: flex; justify-content: center; gap: 0.5rem; color: var(--muted); font-size: 0.78rem; letter-spacing: 0.1em; text-transform: uppercase; }
+    .live-signal { display: flex; justify-content: center; gap: 0.5rem; color: var(--muted); font-family: var(--font-display); font-size: 0.75rem; letter-spacing: 0.1em; text-transform: uppercase; }
     .signal-dot { width: 0.65rem; height: 0.65rem; margin-top: 0.34rem; background: var(--cyan); box-shadow: 0 0 10px var(--cyan); }
-    .side-nav { display: grid; gap: 0.35rem; margin-top: 2.25rem; }
+    .side-nav { display: grid; gap: 0.25rem; margin-top: 1.75rem; }
     .side-nav a {
       display: flex;
       align-items: center;
@@ -100,31 +103,31 @@
       min-height: 3rem;
       padding: 0.7rem 0.75rem;
       color: var(--muted);
+      font-size: 0.875rem;
       text-decoration: none;
       border: 1px solid transparent;
     }
     .side-nav a:hover, .side-nav a:focus-visible { color: var(--ink); border-color: var(--line); background: var(--surface); }
-    .nav-index { color: var(--cyan); font-size: 0.72rem; }
-    .rail-note { margin-top: auto; padding: 1rem 0.6rem 0; border-top: 1px solid var(--line); font-size: 0.68rem; line-height: 1.75; }
+    .nav-index { color: var(--cyan); font-size: 0.75rem; }
+    .rail-note { margin-top: auto; padding: 1rem 0.6rem 0; border-top: 1px solid var(--line); font-size: 0.75rem; line-height: 1.65; }
 
     .content { width: min(100%, 100rem); padding: 1.4rem clamp(1rem, 3vw, 3rem) 3rem; }
     .topbar { display: flex; justify-content: space-between; gap: 1.5rem; align-items: center; min-height: 4rem; margin-bottom: 1.25rem; }
-    .topbar h1 { margin: 0; font-size: clamp(1.25rem, 2.5vw, 1.8rem); letter-spacing: -0.05em; }
+    .topbar h1 { margin: 0; font-size: clamp(1.25rem, 2.5vw, 1.75rem); letter-spacing: -0.035em; }
     .topbar h1 span { color: var(--cyan); }
-    .topbar p { margin: 0.25rem 0 0; color: var(--muted); font-size: 0.78rem; }
-    .run-state { padding: 0.45rem 0.65rem; border: 1px solid var(--line); color: var(--muted); background: var(--surface-muted); font-size: 0.73rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; white-space: nowrap; }
+    .topbar p { margin: 0.25rem 0 0; color: var(--muted); font-size: 0.875rem; }
+    .run-state { padding: 0.5rem 0.7rem; border: 1px solid var(--line); color: var(--muted); background: var(--surface-muted); font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; }
     .run-state.running { color: var(--cyan); border-color: var(--cyan); }
     .run-state.waiting { color: var(--gold); border-color: var(--gold); }
     .run-state.complete { color: var(--green); border-color: var(--green); }
     .run-state.failed { color: var(--rose); border-color: var(--rose); }
 
     main { display: grid; gap: 1.15rem; }
-    .panel { position: relative; border: var(--pixel-border); background: linear-gradient(145deg, rgba(18, 26, 61, 0.97), rgba(8, 13, 33, 0.97)); box-shadow: 4px 4px 0 rgba(3, 5, 16, 0.9); }
-    .panel::before { position: absolute; top: -2px; left: 1rem; width: 2.8rem; height: 2px; content: ""; background: var(--cyan); }
-    .panel-head, .archive-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; padding: 1.1rem 1.1rem 0; }
-    .panel-head h2, .archive-head h2 { margin: 0; font-size: 1rem; letter-spacing: 0.02em; }
-    .eyebrow { margin-bottom: 0.35rem; font-size: 0.68rem; }
-    .status-badge { display: inline-block; padding: 0.22rem 0.45rem; border: 1px solid var(--line-bright); color: var(--cyan); font-size: 0.65rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
+    .panel { position: relative; border: var(--pixel-border); background: linear-gradient(145deg, rgba(18, 26, 61, 0.97), rgba(8, 13, 33, 0.97)); box-shadow: 3px 3px 0 rgba(3, 5, 16, 0.82); }
+    .panel-head, .archive-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; padding: 1rem 1.1rem; border-bottom: 1px solid rgba(111, 144, 212, 0.24); }
+    .panel-head h2, .archive-head h2 { margin: 0; font-size: 1rem; letter-spacing: 0.01em; }
+    .eyebrow { margin-bottom: 0.3rem; font-size: 0.75rem; }
+    .status-badge { display: inline-block; padding: 0.25rem 0.5rem; border: 1px solid var(--line-bright); color: var(--cyan); font-size: 0.75rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; }
 
     .command-grid { display: grid; grid-template-columns: minmax(20rem, 0.9fr) minmax(25rem, 1.3fr); gap: 1.15rem; }
     .mission-panel { padding-bottom: 1.15rem; }
@@ -132,7 +135,7 @@
     .run-form { padding: 1.1rem; }
     .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.9rem; }
     .field-wide { grid-column: 1 / -1; }
-    label { display: block; margin-bottom: 0.35rem; color: var(--muted); font-size: 0.76rem; font-weight: 700; letter-spacing: 0.04em; }
+    label { display: block; margin-bottom: 0.35rem; color: var(--muted); font-size: 0.875rem; font-weight: 700; letter-spacing: 0.02em; }
     .input-note { font-weight: 400; }
     input, select, textarea {
       width: 100%;
@@ -147,13 +150,13 @@
     .check-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.7rem; margin-top: 0.9rem; }
     .check-card { display: flex; gap: 0.55rem; align-items: flex-start; padding: 0.7rem; border: 1px solid var(--line); background: rgba(8, 14, 36, 0.58); }
     .check-card input { width: 1rem; margin: 0.18rem 0 0; accent-color: var(--cyan); }
-    .check-card label { margin: 0; color: var(--ink); font-size: 0.76rem; }
-    .check-card small { display: block; margin-top: 0.2rem; color: var(--muted); font-size: 0.68rem; font-weight: 400; line-height: 1.35; }
+    .check-card label { margin: 0; color: var(--ink); font-size: 0.875rem; }
+    .check-card small { display: block; margin-top: 0.2rem; color: var(--muted); font-size: 0.75rem; font-weight: 400; line-height: 1.4; }
     .button-row { display: flex; justify-content: flex-end; margin-top: 1rem; }
     .button-primary, .button-secondary {
       padding: 0.62rem 0.85rem;
       border: 1px solid var(--line-bright);
-      font-size: 0.74rem;
+      font-size: 0.8rem;
       font-weight: 800;
       letter-spacing: 0.06em;
       text-transform: uppercase;
@@ -163,8 +166,8 @@
     .button-secondary { color: var(--ink); background: var(--surface-raised); }
     .button-secondary:hover { border-color: var(--cyan); color: var(--cyan); }
     button:disabled { cursor: not-allowed; opacity: 0.6; }
-    .doc-info { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin-top: 0.5rem; padding: 0.4rem 0.55rem; color: var(--cyan); border: 1px dashed var(--line); font-size: 0.72rem; }
-    .doc-info .button-secondary { padding: 0.25rem 0.45rem; font-size: 0.65rem; }
+    .doc-info { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin-top: 0.5rem; padding: 0.4rem 0.55rem; color: var(--cyan); border: 1px dashed var(--line); font-size: 0.75rem; }
+    .doc-info .button-secondary { padding: 0.25rem 0.45rem; font-size: 0.75rem; }
     .hidden { display: none !important; }
 
     .command-panel { overflow: hidden; }
@@ -172,17 +175,17 @@
     .command-panel > * { position: relative; z-index: 1; }
     .phase-name { color: var(--ink); text-transform: capitalize; }
     .overview-body { padding: 1.1rem; }
-    .branch { overflow: hidden; padding: 0.55rem 0.65rem; color: var(--cyan); border-left: 3px solid var(--cyan); background: rgba(5, 10, 27, 0.83); font-size: 0.78rem; text-overflow: ellipsis; white-space: nowrap; }
+    .branch { overflow: hidden; padding: 0.6rem 0.7rem; color: var(--cyan); border-left: 3px solid var(--cyan); background: rgba(5, 10, 27, 0.83); font-family: var(--font-display); font-size: 0.875rem; text-overflow: ellipsis; white-space: nowrap; }
     .metric-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.55rem; margin: 0.85rem 0 1.1rem; }
     .metric { min-width: 0; padding: 0.65rem; border: 1px solid var(--line); background: rgba(5, 10, 27, 0.76); }
-    .metric dt { color: var(--muted); font-size: 0.65rem; letter-spacing: 0.08em; text-transform: uppercase; }
-    .metric dd { overflow: hidden; margin: 0.25rem 0 0; color: var(--ink); font-size: 0.78rem; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
-    .lifecycle-title { margin: 0 0 0.65rem; color: var(--muted); font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; }
+    .metric dt { color: var(--muted); font-family: var(--font-display); font-size: 0.75rem; letter-spacing: 0.06em; text-transform: uppercase; }
+    .metric dd { overflow: hidden; margin: 0.25rem 0 0; color: var(--ink); font-size: 0.875rem; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+    .lifecycle-title { margin: 0 0 0.65rem; color: var(--muted); font-family: var(--font-display); font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; }
     .stage-rail { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; }
     .stage { min-height: 5.1rem; padding: 0.55rem; border: 1px solid var(--line); background: rgba(7, 12, 31, 0.88); }
-    .stage > span { display: block; color: var(--muted); font-size: 0.63rem; letter-spacing: 0.06em; text-transform: uppercase; }
-    .stage strong { display: block; margin-top: 0.48rem; font-size: 0.73rem; }
-    .stage-state { margin-top: 0.16rem; color: var(--muted); font-size: 0.63rem; }
+    .stage > span { display: block; color: var(--muted); font-family: var(--font-display); font-size: 0.75rem; letter-spacing: 0.05em; text-transform: uppercase; }
+    .stage strong { display: block; margin-top: 0.48rem; font-size: 0.8125rem; }
+    .stage-state { margin-top: 0.16rem; color: var(--muted); font-size: 0.75rem; }
     .stage.active { border-color: var(--cyan); box-shadow: inset 3px 0 0 var(--cyan); }
     .stage.active .stage-state { color: var(--cyan); }
     .stage.complete { border-color: #33755f; }
@@ -191,14 +194,14 @@
     .stage.failed .stage-state { color: var(--rose); }
 
     .party-panel { padding-bottom: 1.1rem; }
-    .party-grid { display: grid; grid-template-columns: repeat(6, minmax(8rem, 1fr)); gap: 0.65rem; padding: 1.1rem; overflow-x: auto; }
-    .agent-card { min-width: 8rem; padding: 0.75rem; border: 1px solid var(--line); background: linear-gradient(135deg, rgba(32, 45, 90, 0.3), rgba(4, 8, 23, 0.78)); }
+    .party-grid { display: grid; grid-template-columns: repeat(3, minmax(12rem, 1fr)); gap: 0.7rem; padding: 1.1rem; }
+    .agent-card { min-width: 0; padding: 0.85rem; border: 1px solid var(--line); background: linear-gradient(135deg, rgba(32, 45, 90, 0.3), rgba(4, 8, 23, 0.78)); }
     .agent-card.on-mission { border-color: var(--cyan); box-shadow: inset 0 3px 0 var(--cyan), 0 0 18px rgba(84, 234, 212, 0.12); }
     .agent-card.alert { border-color: var(--rose); box-shadow: inset 0 3px 0 var(--rose); }
     .agent-top { display: flex; gap: 0.55rem; align-items: center; }
     .agent-avatar {
-      width: 3.8rem;
-      height: 4.4rem;
+      width: 4.75rem;
+      height: 5.35rem;
       flex: 0 0 auto;
       background-image: url('/assets/devflowai-guild-party.png');
       background-repeat: no-repeat;
@@ -212,36 +215,36 @@
     .paladin { --sprite-x: 60%; }
     .ranger { --sprite-x: 80%; }
     .alchemist { --sprite-x: 100%; }
-    .agent-card h3 { margin: 0; font-size: 0.8rem; }
-    .agent-job { margin: 0.16rem 0 0; color: var(--violet); font-size: 0.63rem; letter-spacing: 0.06em; text-transform: uppercase; }
-    .agent-state { display: block; margin-top: 0.6rem; color: var(--muted); font-size: 0.67rem; }
+    .agent-card h3 { margin: 0; font-size: 0.95rem; }
+    .agent-job { margin: 0.16rem 0 0; color: var(--violet); font-family: var(--font-display); font-size: 0.75rem; letter-spacing: 0.05em; text-transform: uppercase; }
+    .agent-state { display: block; margin-top: 0.6rem; color: var(--muted); font-size: 0.8125rem; }
     .agent-card.on-mission .agent-state { color: var(--cyan); }
     .agent-card.alert .agent-state { color: var(--rose); }
 
     .activity-layout { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(19rem, 0.75fr); gap: 1.15rem; }
     .activity-panel, .approval-panel { min-height: 20rem; }
     .activity-list { display: grid; gap: 0.55rem; max-height: 32rem; overflow: auto; padding: 1.1rem; }
-    .activity-empty, .audit-empty { color: var(--muted); font-size: 0.8rem; }
+    .activity-empty, .audit-empty { color: var(--muted); font-size: 0.875rem; }
     .event { padding: 0.7rem; border-left: 3px solid var(--line); background: rgba(5, 9, 27, 0.7); }
     .event.warn { border-color: var(--gold); }
     .event.error, .event.aborted { border-color: var(--rose); }
     .event.gate { border-color: var(--violet); }
     .event.done { border-color: var(--green); }
-    .event-meta { display: flex; flex-wrap: wrap; gap: 0.45rem; color: var(--muted); font-size: 0.63rem; text-transform: uppercase; }
+    .event-meta { display: flex; flex-wrap: wrap; gap: 0.45rem; color: var(--muted); font-family: var(--font-display); font-size: 0.75rem; text-transform: uppercase; }
     .event-type { color: var(--cyan); }
-    .event-message { margin: 0.32rem 0 0; font-size: 0.78rem; overflow-wrap: anywhere; }
-    .event-details { margin-top: 0.32rem; color: var(--muted); font-size: 0.68rem; overflow-wrap: anywhere; white-space: pre-wrap; }
+    .event-message { margin: 0.32rem 0 0; font-size: 0.875rem; overflow-wrap: anywhere; }
+    .event-details { margin-top: 0.32rem; color: var(--muted); font-size: 0.75rem; overflow-wrap: anywhere; white-space: pre-wrap; }
     .approval-body { padding: 1.1rem; }
-    .approval-detail { min-height: 6rem; padding: 0.75rem; color: var(--muted); border: 1px dashed var(--line-bright); background: rgba(5, 9, 27, 0.72); font-size: 0.75rem; white-space: pre-wrap; }
+    .approval-detail { min-height: 6rem; padding: 0.75rem; color: var(--muted); border: 1px dashed var(--line-bright); background: rgba(5, 9, 27, 0.72); font-size: 0.875rem; white-space: pre-wrap; }
     .approval-actions { display: flex; justify-content: flex-end; gap: 0.65rem; margin-top: 1rem; }
 
     .archive { overflow: hidden; padding-bottom: 1.1rem; }
     .table-wrap { overflow: auto; padding: 1.1rem; }
-    .archive-table { width: 100%; min-width: 56rem; border-collapse: collapse; font-size: 0.73rem; }
-    .archive-table th { color: var(--muted); font-size: 0.63rem; letter-spacing: 0.07em; text-align: left; text-transform: uppercase; }
+    .archive-table { width: 100%; min-width: 56rem; border-collapse: collapse; font-size: 0.8125rem; }
+    .archive-table th { color: var(--muted); font-family: var(--font-display); font-size: 0.75rem; letter-spacing: 0.05em; text-align: left; text-transform: uppercase; }
     .archive-table th, .archive-table td { padding: 0.68rem 0.55rem; border-bottom: 1px solid var(--line); vertical-align: top; }
     .archive-table td:first-child { max-width: 19rem; overflow-wrap: anywhere; }
-    .archive-table .button-secondary { padding: 0.35rem 0.48rem; font-size: 0.63rem; }
+    .archive-table .button-secondary { padding: 0.35rem 0.48rem; font-size: 0.75rem; }
     .status-badge.running { color: var(--cyan); }
     .status-badge.completed { color: var(--green); border-color: #33755f; }
     .status-badge.failed { color: var(--rose); border-color: var(--rose); }
@@ -259,191 +262,51 @@
     }
     @media (max-width: 820px) {
       .command-grid, .activity-layout { grid-template-columns: 1fr; }
-      .party-grid { grid-template-columns: repeat(3, minmax(8.5rem, 1fr)); }
+      .party-grid { grid-template-columns: repeat(2, minmax(12rem, 1fr)); }
     }
     @media (max-width: 560px) {
       .content { padding: 0.9rem 0.7rem 2rem; }
       .topbar, .panel-head, .archive-head { align-items: flex-start; flex-direction: column; }
       .field-grid, .check-grid, .metric-grid, .stage-rail { grid-template-columns: 1fr; }
-      .party-grid { grid-template-columns: repeat(2, minmax(8rem, 1fr)); }
-      .side-nav a { font-size: 0.72rem; }
+      .party-grid { grid-template-columns: 1fr; }
+      .side-nav a { font-size: 0.8125rem; }
       .nav-index { display: none; }
-    }
-    /* Classic JRPG party-menu treatment. */
-    :root {
-      --night: #111615;
-      --surface: #4f5955;
-      --surface-raised: #68706b;
-      --surface-muted: #35403d;
-      --ink: #f2f2e9;
-      --muted: #d3d5cd;
-      --line: #212a29;
-      --line-bright: #f1f3ed;
-      --cyan: #b4eee9;
-      --violet: #d7caf6;
-      --gold: #f1d8a1;
-      --rose: #f0a0a0;
-      --green: #b8e6b3;
-      font-family: Georgia, "Times New Roman", serif;
-    }
-    body {
-      background:
-        linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
-        linear-gradient(135deg, rgba(255, 255, 255, 0.035) 25%, transparent 25%, transparent 50%, rgba(255, 255, 255, 0.035) 50%, rgba(255, 255, 255, 0.035) 75%, transparent 75%),
-        radial-gradient(circle at 50% 0, #4b5550, #101514 72%);
-      background-size: 15px 15px, 11px 11px, auto;
-      font-family: Georgia, "Times New Roman", serif;
-    }
-    .app-shell {
-      grid-template-columns: minmax(0, 1fr) 16rem;
-      width: min(100% - 2rem, 94rem);
-      min-height: auto;
-      margin: 1rem auto;
-      border: 3px solid #101615;
-      box-shadow: 0 0 0 3px #aeb7b2, 0 0 0 6px #2b3432, 10px 12px 0 rgba(0, 0, 0, 0.5);
-      background: #1b2220;
-    }
-    .content { order: 1; width: 100%; padding: 1.1rem; }
-    .side-rail {
-      order: 2;
-      position: sticky;
-      top: 1rem;
-      min-height: calc(100vh - 2rem);
-      padding: 0.75rem;
-      color: var(--ink);
-      background: linear-gradient(135deg, #69726d, #4b5550);
-      border: 3px solid #e6e8e0;
-      outline: 3px solid #26302e;
-      box-shadow: inset 0 0 0 3px rgba(23, 30, 28, 0.7);
-    }
-    .brand-mark { padding: 0.75rem; border-bottom: 1px solid #dce0d6; }
-    .brand-sigil { color: #27322f; background: #dce5dc; border-color: #f8f8f3; box-shadow: 2px 2px 0 #293330; }
-    .brand-mark strong { font-size: 1.25rem; }
-    .brand-mark small, .rail-note, .eyebrow { color: #e4e7df; letter-spacing: 0.07em; }
-    .mission-plaque { margin: 0.85rem 0; padding: 0.8rem 0.45rem; color: #202a27; border: 2px solid #f3f4ef; background: rgba(233, 237, 228, 0.66); box-shadow: inset 0 0 0 2px #78817b, 2px 2px 0 #26302e; font-size: 0.8rem; }
-    .live-signal { color: #24312d; font-family: ui-monospace, monospace; font-size: 0.65rem; }
-    .signal-dot { background: #8fe2be; box-shadow: 0 0 5px #d4fae6; }
-    .side-nav { gap: 0; margin-top: 1rem; border: 2px solid #2b3532; }
-    .side-nav a { min-height: 3.2rem; padding: 0.85rem; color: #17211f; border: 0; border-bottom: 1px solid #c8cec6; background: rgba(218, 223, 213, 0.55); font-size: 1.08rem; }
-    .side-nav a:last-child { border-bottom: 0; }
-    .side-nav a:hover, .side-nav a:focus-visible { color: #142521; border-color: #c8cec6; background: #e3eee7; }
-    .nav-index { color: #49605a; font-family: ui-monospace, monospace; }
-    .rail-note { color: #202b28; border-top-color: #24302d; font-size: 0.72rem; }
-    .topbar { min-height: 3.2rem; margin-bottom: 0.75rem; padding: 0.55rem 0.75rem; color: #192421; border: 3px solid #e5e8df; outline: 3px solid #2d3734; background: linear-gradient(135deg, #818a84, #626c67); box-shadow: inset 0 0 0 2px #3d4844; }
-    .topbar h1 { font-size: 1.25rem; letter-spacing: 0; }
-    .topbar h1 span { color: #f1f2e8; text-shadow: 1px 1px #29342f; }
-    .topbar p { color: #26312e; font-size: 0.78rem; }
-    .run-state { color: #26302d; border: 1px solid #2b3733; background: rgba(232, 236, 226, 0.7); font-family: ui-monospace, monospace; }
-    .run-state.running { color: #0e5d53; border-color: #0e5d53; }
-    .run-state.waiting { color: #755315; border-color: #755315; }
-    .run-state.complete { color: #1b7149; border-color: #1b7149; }
-    .run-state.failed { color: #922f37; border-color: #922f37; }
-    .panel { border: 3px solid #e9ece4; outline: 3px solid #2b3532; background: linear-gradient(135deg, rgba(119, 130, 123, 0.98), rgba(76, 87, 82, 0.98)); box-shadow: inset 0 0 0 3px rgba(38, 48, 45, 0.72), 4px 5px 0 rgba(0, 0, 0, 0.38); }
-    .panel::before { display: none; }
-    .panel-head, .archive-head { padding: 0.9rem 1rem 0; }
-    .panel-head h2, .archive-head h2 { font-size: 1.1rem; text-shadow: 1px 1px #27312e; }
-    .eyebrow { color: #e9ece4; font-family: ui-monospace, monospace; font-size: 0.6rem; }
-    .status-badge { color: #24302c; border-color: #283430; background: rgba(232, 236, 226, 0.65); font-family: ui-monospace, monospace; }
-    .command-grid { grid-template-columns: 1fr; gap: 1rem; }
-    #party { order: -1; }
-    .mission-panel, .command-panel, .activity-panel, .approval-panel, .archive, .audit-panel { background: linear-gradient(135deg, rgba(119, 130, 123, 0.98), rgba(76, 87, 82, 0.98)); }
-    input, select, textarea { color: #17231f; border: 2px solid #2e3935; background: rgba(231, 234, 224, 0.74); box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.65); }
-    textarea::placeholder, input::placeholder { color: #52615b; }
-    input::file-selector-button { color: #1f2d28; border-color: #32403b; background: #dfe5da; }
-    .check-card { border-color: #33403b; background: rgba(216, 222, 211, 0.38); }
-    .check-card label, .check-card small, label { color: #1f2d29; }
-    .button-primary, .button-secondary { color: #1d2925; border: 2px solid #e7ebe2; outline: 2px solid #293531; box-shadow: 2px 2px 0 #26312e; background: #b8d1ca; font-family: Georgia, "Times New Roman", serif; }
-    .button-primary { background: #c7e4db; }
-    .button-primary:hover, .button-secondary:hover { color: #172520; border-color: #fff; background: #e0eee8; }
-    .command-panel::after { background-image: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0 1px, transparent 1px 7px); }
-    .branch, .metric, .stage { color: #1d2926; border-color: #303d38; background: rgba(220, 225, 215, 0.42); }
-    .branch { color: #173f38; border-left-color: #3f8579; }
-    .metric dt, .stage > span, .stage-state, .lifecycle-title { color: #30403b; }
-    .metric dd { color: #14231f; }
-    .stage.active { border-color: #e4eee8; box-shadow: inset 4px 0 0 #4d9689; }
-    .stage.active .stage-state { color: #125c51; }
-    .stage.complete { border-color: #387254; }
-    .stage.complete .stage-state { color: #1d6b48; }
-    .stage.failed { border-color: #a94248; box-shadow: inset 4px 0 0 #a94248; }
-    .stage.failed .stage-state { color: #8c2832; }
-    .party-panel { padding-bottom: 0.8rem; }
-    .party-grid { grid-template-columns: 1fr; gap: 0; padding: 0.85rem; overflow: hidden; border-top: 1px solid rgba(235, 238, 229, 0.6); }
-    .agent-card { display: grid; grid-template-columns: 7.6rem minmax(0, 1fr); min-width: 0; min-height: 7.55rem; padding: 0; border: 1px solid #293530; background: linear-gradient(135deg, rgba(194, 201, 191, 0.52), rgba(112, 124, 117, 0.55)); box-shadow: inset 0 0 0 1px rgba(238, 241, 233, 0.25); }
-    .agent-card + .agent-card { border-top: 0; }
-    .agent-card.on-mission { border-color: #eef4ec; box-shadow: inset 5px 0 0 #4f9c8d, inset 0 0 0 1px rgba(238, 241, 233, 0.4); }
-    .agent-card.alert { border-color: #8b363e; box-shadow: inset 5px 0 0 #a94248; }
-    .agent-top { display: contents; }
-    .agent-avatar { grid-column: 1; grid-row: 1 / span 2; width: 7.6rem; height: 7.5rem; background-image: url('/assets/devflowai-guild-party.png'); background-position: var(--sprite-x) 50%; background-size: 600% auto; border-right: 2px solid #2d3934; image-rendering: auto; }
-    .agent-top > div:last-child { grid-column: 2; grid-row: 1; display: flex; align-items: baseline; gap: 0.8rem; padding: 0.9rem 1rem 0.2rem; border-bottom: 1px solid rgba(46, 57, 52, 0.6); }
-    .agent-card h3 { color: #17221f; font-size: 1.35rem; text-shadow: 1px 1px #e2e7dc; }
-    .agent-job { margin: 0; color: #344943; font-family: ui-monospace, monospace; font-size: 0.68rem; }
-    .agent-state { grid-column: 2; grid-row: 2; margin: 0; padding: 0.7rem 1rem; color: #24312d; font-family: ui-monospace, monospace; font-size: 0.78rem; }
-    .agent-card.on-mission .agent-state { color: #085e50; }
-    .agent-card.alert .agent-state { color: #8d2932; }
-    .event { color: #202c28; border-left-color: #53665f; background: rgba(218, 224, 213, 0.45); }
-    .event-meta, .event-details, .activity-empty, .audit-empty { color: #34423c; }
-    .event-type { color: #14594f; }
-    .event.warn { border-color: #9c752b; }
-    .event.error, .event.aborted { border-color: #9f3941; }
-    .event.gate { border-color: #786199; }
-    .event.done { border-color: #36704e; }
-    .approval-detail { color: #26332f; border-color: #3d4e48; background: rgba(223, 228, 218, 0.45); }
-    .archive-table th { color: #2d3c36; }
-    .archive-table th, .archive-table td { border-bottom-color: #3a4943; }
-    .status-badge.running { color: #126254; }
-    .status-badge.completed { color: #1c6b48; border-color: #2f7955; }
-    .status-badge.failed { color: #8b2932; border-color: #9d3c44; }
-    @media (max-width: 1080px) {
-      .app-shell { display: block; width: min(100% - 1rem, 94rem); margin: 0.5rem auto; }
-      .side-rail { position: relative; min-height: auto; margin-top: 1rem; }
-      .side-nav { display: grid; grid-template-columns: repeat(5, 1fr); }
-      .side-nav a { min-height: 2.8rem; padding: 0.6rem; font-size: 0.82rem; }
-      .rail-note { display: none; }
-    }
-    @media (max-width: 560px) {
-      .content { padding: 0.7rem; }
-      .agent-card { grid-template-columns: 5.2rem minmax(0, 1fr); min-height: 5.2rem; }
-      .agent-avatar { width: 5.2rem; height: 5.2rem; }
-      .agent-top > div:last-child { gap: 0.45rem; padding: 0.45rem 0.6rem 0.1rem; }
-      .agent-card h3 { font-size: 1rem; }
-      .agent-state { padding: 0.4rem 0.6rem; font-size: 0.67rem; }
-      .side-nav { grid-template-columns: 1fr 1fr; }
     }
   </style>
 </head>
 <body>
 <div class="app-shell">
-  <aside class="side-rail" aria-label="Guild command navigation">
+  <aside class="side-rail" aria-label="Agent operations navigation">
     <div class="brand-mark">
       <div class="brand-sigil" aria-hidden="true">DF</div>
-      <div><strong>DevFlowAI</strong><small>Guild command</small></div>
+      <div><strong>DevFlowAI</strong><small>SDLC control plane</small></div>
     </div>
-    <div class="mission-plaque">Mission<br>Control</div>
-    <div class="live-signal"><span class="signal-dot" aria-hidden="true"></span>System online</div>
+    <div class="mission-plaque">Run<br>Control</div>
+    <div class="live-signal"><span class="signal-dot" aria-hidden="true"></span>Ready</div>
     <nav class="side-nav">
-      <a href="#mission"><span class="nav-index">01</span> Mission</a>
-      <a href="#command"><span class="nav-index">02</span> Command board</a>
-      <a href="#party"><span class="nav-index">03</span> Guild party</a>
-      <a href="#activity"><span class="nav-index">04</span> Signal feed</a>
-      <a href="#history"><span class="nav-index">05</span> Chronicle</a>
+      <a href="#mission"><span class="nav-index">01</span> Run setup</a>
+      <a href="#command"><span class="nav-index">02</span> Current run</a>
+      <a href="#party"><span class="nav-index">03</span> Agent party</a>
+      <a href="#activity"><span class="nav-index">04</span> Activity</a>
+      <a href="#history"><span class="nav-index">05</span> History</a>
     </nav>
-    <p class="rail-note">Every gate, tool result, and delivery status is recorded in the run chronicle.</p>
+    <p class="rail-note">Every gate, tool result, and delivery status is recorded in the audit trail.</p>
   </aside>
 
   <div class="content">
     <header class="topbar">
       <div>
-        <h1><span>◆</span> DevFlowAI party status</h1>
-        <p>Governed delivery party — live workflow position and command controls.</p>
+        <h1><span>▣</span> Agent operations</h1>
+        <p>Run control, workflow status, approvals, and delivery history.</p>
       </div>
-      <div id="run-state" class="run-state" role="status" aria-live="polite">No mission</div>
+      <div id="run-state" class="run-state" role="status" aria-live="polite">No active run</div>
     </header>
 
     <main>
-      <section id="mission" class="command-grid" aria-label="Mission control">
+      <section id="mission" class="command-grid" aria-label="Run control">
         <form id="run-form" class="panel mission-panel" novalidate>
           <div class="panel-head">
-            <div><p class="eyebrow">Mission brief</p><h2>Start a controlled change</h2></div>
+            <div><p class="eyebrow">New run</p><h2>Start a controlled change</h2></div>
             <span class="status-badge">Ready</span>
           </div>
           <div class="run-form">
@@ -456,16 +319,16 @@
               <div>
                 <label for="strategy">Strategy</label>
                 <select id="strategy">
-                  <option value="orchestrated">Guild review</option>
+                  <option value="orchestrated">Orchestrated review</option>
                   <option value="direct">Direct worker</option>
                 </select>
               </div>
               <div class="field-wide">
-                <label for="task">Mission objective</label>
+                <label for="task">Task</label>
                 <textarea id="task" placeholder="Describe the change and acceptance criteria."></textarea>
               </div>
               <div class="field-wide">
-                <label for="doc">Mission document <span class="input-note">(.md, .markdown, or .txt; optional)</span></label>
+                <label for="doc">Task document <span class="input-note">(.md, .markdown, or .txt; optional)</span></label>
                 <input id="doc" type="file" accept=".md,.markdown,.txt">
                 <div id="doc-info" class="doc-info hidden"><span id="doc-name"></span><button id="doc-remove" class="button-secondary" type="button">Remove</button></div>
               </div>
@@ -474,13 +337,13 @@
               <div class="check-card"><input id="open-pr" type="checkbox"><label for="open-pr">Open pull request<small>Requires a real GitHub repository.</small></label></div>
               <div class="check-card"><input id="release" type="checkbox"><label for="release">Dispatch release workflow<small>After CI passes, merge, and approval.</small></label></div>
             </div>
-            <div class="button-row"><button id="run" class="button-primary" type="submit">Begin mission</button></div>
+            <div class="button-row"><button id="run" class="button-primary" type="submit">Start run</button></div>
           </div>
         </form>
 
         <section id="command" class="panel command-panel" aria-label="Current command board">
           <div class="panel-head">
-            <div><p class="eyebrow">Command board</p><h2 id="phase-name" class="phase-name">Awaiting mission</h2></div>
+            <div><p class="eyebrow">Current run</p><h2 id="phase-name" class="phase-name">Awaiting task</h2></div>
             <span id="phase-badge" class="status-badge">Idle</span>
           </div>
           <div class="overview-body">
@@ -490,32 +353,32 @@
               <div class="metric"><dt>CI</dt><dd id="metric-ci">Not run</dd></div>
               <div class="metric"><dt>Delivery</dt><dd id="metric-delivery">Not requested</dd></div>
             </dl>
-            <p class="lifecycle-title">Mission lifecycle</p>
+            <p class="lifecycle-title">Lifecycle</p>
             <div id="stage-rail" class="stage-rail" aria-label="Lifecycle status"></div>
           </div>
         </section>
       </section>
 
-      <section id="party" class="panel party-panel" aria-label="Guild party">
-        <div class="panel-head"><div><p class="eyebrow">Guild party</p><h2>Specialists at the ready</h2></div><span class="status-badge">Phase-aware</span></div>
+      <section id="party" class="panel party-panel" aria-label="Agent party">
+        <div class="panel-head"><div><p class="eyebrow">Agent party</p><h2>Workflow specialists</h2></div><span class="status-badge">Phase-aware</span></div>
         <div class="party-grid">
-          <article class="agent-card" data-agent="planner"><div class="agent-top"><div class="agent-avatar priest" aria-hidden="true"></div><div><h3>Priest</h3><p class="agent-job">Planner</p></div></div><span class="agent-state">Awaiting mission</span></article>
-          <article class="agent-card" data-agent="coder"><div class="agent-top"><div class="agent-avatar knight" aria-hidden="true"></div><div><h3>Knight</h3><p class="agent-job">Coder</p></div></div><span class="agent-state">Awaiting mission</span></article>
-          <article class="agent-card" data-agent="reviewer"><div class="agent-top"><div class="agent-avatar wizard" aria-hidden="true"></div><div><h3>Wizard</h3><p class="agent-job">Reviewer</p></div></div><span class="agent-state">Awaiting mission</span></article>
-          <article class="agent-card" data-agent="quality"><div class="agent-top"><div class="agent-avatar paladin" aria-hidden="true"></div><div><h3>Paladin</h3><p class="agent-job">Quality gate</p></div></div><span class="agent-state">Awaiting mission</span></article>
-          <article class="agent-card" data-agent="delivery"><div class="agent-top"><div class="agent-avatar ranger" aria-hidden="true"></div><div><h3>Ranger</h3><p class="agent-job">Delivery scout</p></div></div><span class="agent-state">Awaiting mission</span></article>
+          <article class="agent-card" data-agent="planner"><div class="agent-top"><div class="agent-avatar priest" aria-hidden="true"></div><div><h3>Priest</h3><p class="agent-job">Planner</p></div></div><span class="agent-state">Awaiting run</span></article>
+          <article class="agent-card" data-agent="coder"><div class="agent-top"><div class="agent-avatar knight" aria-hidden="true"></div><div><h3>Knight</h3><p class="agent-job">Coder</p></div></div><span class="agent-state">Awaiting run</span></article>
+          <article class="agent-card" data-agent="reviewer"><div class="agent-top"><div class="agent-avatar wizard" aria-hidden="true"></div><div><h3>Wizard</h3><p class="agent-job">Reviewer</p></div></div><span class="agent-state">Awaiting run</span></article>
+          <article class="agent-card" data-agent="quality"><div class="agent-top"><div class="agent-avatar paladin" aria-hidden="true"></div><div><h3>Paladin</h3><p class="agent-job">Quality gate</p></div></div><span class="agent-state">Awaiting run</span></article>
+          <article class="agent-card" data-agent="delivery"><div class="agent-top"><div class="agent-avatar ranger" aria-hidden="true"></div><div><h3>Ranger</h3><p class="agent-job">Delivery</p></div></div><span class="agent-state">Awaiting run</span></article>
           <article class="agent-card" data-agent="scribe"><div class="agent-top"><div class="agent-avatar alchemist" aria-hidden="true"></div><div><h3>Alchemist</h3><p class="agent-job">Scribe</p></div></div><span class="agent-state">Awaits a lesson</span></article>
         </div>
       </section>
 
-      <section id="activity" class="activity-layout" aria-label="Mission activity">
+      <section id="activity" class="activity-layout" aria-label="Run activity">
         <section class="panel activity-panel">
-          <div class="panel-head"><div><p class="eyebrow">Signal feed</p><h2>Live run events</h2></div></div>
-          <div id="log" class="activity-list" aria-live="polite"><p id="activity-empty" class="activity-empty">Mission signals will appear here.</p></div>
+          <div class="panel-head"><div><p class="eyebrow">Activity</p><h2>Live run events</h2></div></div>
+          <div id="log" class="activity-list" aria-live="polite"><p id="activity-empty" class="activity-empty">Run events will appear here.</p></div>
         </section>
 
         <section id="gate" class="panel approval-panel hidden" aria-live="assertive">
-          <div class="panel-head"><div><p class="eyebrow">Command seal required</p><h2 id="gate-title"></h2></div></div>
+          <div class="panel-head"><div><p class="eyebrow">Approval required</p><h2 id="gate-title"></h2></div></div>
           <div class="approval-body">
             <div id="gate-detail" class="approval-detail"></div>
             <label id="reason-label" for="reason" style="margin-top:1rem">Decision note <span class="input-note">(optional)</span></label>
@@ -526,17 +389,17 @@
       </section>
 
       <section class="panel archive" id="history">
-        <div class="archive-head"><div><p class="eyebrow">Chronicle</p><h2>Recent SDLC runs</h2></div><button id="history-refresh" class="button-secondary" type="button">Refresh</button></div>
+        <div class="archive-head"><div><p class="eyebrow">History</p><h2>Recent SDLC runs</h2></div><button id="history-refresh" class="button-secondary" type="button">Refresh</button></div>
         <div class="table-wrap">
           <table class="archive-table">
-            <thead><tr><th>Mission</th><th>Strategy</th><th>Status</th><th>Build</th><th>PR</th><th>CI</th><th>Release</th><th>Verify</th><th>Record</th><th>Started</th></tr></thead>
+            <thead><tr><th>Task</th><th>Strategy</th><th>Status</th><th>Build</th><th>PR</th><th>CI</th><th>Release</th><th>Verify</th><th>Audit</th><th>Started</th></tr></thead>
             <tbody id="history-body"></tbody>
           </table>
         </div>
       </section>
 
       <section id="audit" class="panel audit-panel hidden">
-        <div class="archive-head"><div><p class="eyebrow">Run record</p><h2 id="audit-title">Mission audit</h2></div><button id="audit-close" class="button-secondary" type="button">Close</button></div>
+        <div class="archive-head"><div><p class="eyebrow">Audit trail</p><h2 id="audit-title">Run audit</h2></div><button id="audit-close" class="button-secondary" type="button">Close</button></div>
         <div id="audit-list" class="audit-list"></div>
       </section>
     </main>
@@ -561,7 +424,7 @@
     COMMITTING: ['delivery', 'Preparing delivery'],
     OPENING_PR: ['delivery', 'Opening pull request'],
     VALIDATING_CI: ['delivery', 'Watching CI'],
-    WAITING_FOR_RELEASE_APPROVAL: ['delivery', 'Awaiting release seal'],
+    WAITING_FOR_RELEASE_APPROVAL: ['delivery', 'Awaiting release approval'],
     VERIFYING_RELEASE_PR: ['delivery', 'Confirming merge'],
     DISPATCHING_RELEASE: ['delivery', 'Dispatching release'],
     VERIFYING_DEPLOYMENT: ['delivery', 'Verifying delivery']
@@ -636,7 +499,7 @@
       } else if (group.id === currentStageId) {
         item.classList.add('active');
         label.textContent = titleCase(phase);
-        state.textContent = eventType === 'gate' ? 'Awaiting seal' : 'Active';
+        state.textContent = eventType === 'gate' ? 'Awaiting approval' : 'Active';
       } else {
         label.textContent = 'Not started';
         state.textContent = 'Pending';
@@ -648,7 +511,7 @@
     document.querySelectorAll('[data-agent]').forEach(card => {
       card.classList.remove('on-mission', 'alert');
       const state = card.querySelector('.agent-state');
-      state.textContent = card.dataset.agent === 'scribe' ? 'Awaits a lesson' : 'Awaiting mission';
+      state.textContent = card.dataset.agent === 'scribe' ? 'Awaits a lesson' : 'Awaiting run';
     });
     if (data.skillDraft || data.memoryFact) {
       const scribe = document.querySelector('[data-agent="scribe"]');
@@ -657,7 +520,7 @@
     }
     if (phase === 'DONE') {
       document.querySelectorAll('[data-agent]').forEach(card => {
-        card.querySelector('.agent-state').textContent = 'Mission complete';
+        card.querySelector('.agent-state').textContent = 'Run complete';
       });
       currentAgent = null;
       return;
@@ -667,14 +530,14 @@
     currentAgent = assignment[0];
     const active = document.querySelector(`[data-agent="${currentAgent}"]`);
     active.classList.add(eventType === 'error' || eventType === 'aborted' ? 'alert' : 'on-mission');
-    active.querySelector('.agent-state').textContent = eventType === 'gate' ? 'Awaiting command seal' : assignment[1];
+    active.querySelector('.agent-state').textContent = eventType === 'gate' ? 'Awaiting approval' : assignment[1];
   }
 
   function resetRunOverview() {
     currentStageId = null;
     currentAgent = null;
     completedStages.clear();
-    $('phase-name').textContent = 'Preparing mission';
+    $('phase-name').textContent = 'Preparing run';
     $('phase-badge').textContent = 'Starting';
     $('active-branch').textContent = 'Preparing workspace';
     $('metric-build').textContent = 'Not run';
@@ -682,7 +545,7 @@
     $('metric-delivery').textContent = 'Not requested';
     renderStageRail();
     updateParty('PREPARING', 'step');
-    setRunState('Mission starting', 'running');
+    setRunState('Starting', 'running');
   }
 
   function updateRunOverview(type, data) {
@@ -704,10 +567,10 @@
     if (data && data.ciStatus) $('metric-ci').textContent = titleCase(data.ciStatus);
     if (data && data.releaseStatus) $('metric-delivery').textContent = titleCase(data.releaseStatus);
     if (data && data.verificationStatus) $('metric-delivery').textContent = `Verified: ${titleCase(data.verificationStatus)}`;
-    if (type === 'gate') setRunState('Seal required', 'waiting');
-    else if (type === 'done') setRunState('Mission complete', 'complete');
-    else if (type === 'error' || type === 'aborted') setRunState('Mission stopped', 'failed');
-    else if (phase) setRunState('Mission active', 'running');
+    if (type === 'gate') setRunState('Approval required', 'waiting');
+    else if (type === 'done') setRunState('Run complete', 'complete');
+    else if (type === 'error' || type === 'aborted') setRunState('Run stopped', 'failed');
+    else if (phase) setRunState('Run active', 'running');
   }
 
   function safeLink(url, text) {
@@ -781,7 +644,7 @@
     if (Array.isArray(data && data.filesTouched) && data.filesTouched.length) details.push(data.filesTouched.join('\n'));
     if (data && data.skillDraft) details.push(`Learned: ${data.skillDraft.name} — ${data.skillDraft.description}`);
     if (data && data.memoryFact) details.push(`Remembered: ${data.memoryFact}`);
-    $('gate-detail').textContent = details.join('\n\n') || 'Review the current mission signals, then make a decision.';
+    $('gate-detail').textContent = details.join('\n\n') || 'Review the current run activity, then make a decision.';
     $('reason').value = '';
     $('gate').classList.remove('hidden');
   }
@@ -807,7 +670,7 @@
     const file = $('doc').files[0];
     $('doc').value = '';
     if (!file) return;
-    if (!DOC_EXT_RE.test(file.name)) { log('error', `"${file.name}" is not a supported mission document`); return; }
+    if (!DOC_EXT_RE.test(file.name)) { log('error', `"${file.name}" is not a supported task document`); return; }
     if (file.size === 0) { log('error', `"${file.name}" is empty`); return; }
     if (file.size > MAX_DOC_BYTES) { log('error', `"${file.name}" is over the 100 KB limit`); return; }
     $('task').value = await file.text();
@@ -833,7 +696,7 @@
     const empty = document.createElement('p');
     empty.id = 'activity-empty';
     empty.className = 'activity-empty';
-    empty.textContent = 'Waiting for the mission to begin.';
+    empty.textContent = 'Waiting for the run to begin.';
     $('log').appendChild(empty);
     hideGate();
     resetRunOverview();
@@ -843,13 +706,13 @@
         openPr: $('open-pr').checked, release: $('release').checked })
     });
     if (!res.ok) {
-      log('error', `Could not start the mission (HTTP ${res.status})`);
+      log('error', `Could not start the run (HTTP ${res.status})`);
       $('run').disabled = false;
-      setRunState('No mission');
+      setRunState('No active run');
       return;
     }
     runId = (await res.json()).runId;
-    log('step', `Mission ${runId} started`);
+    log('step', `Run ${runId} started`);
     const source = new EventSource(`/api/runs/${runId}/stream`);
     const onEvent = (streamEvent) => {
       const payload = JSON.parse(streamEvent.data);
@@ -914,7 +777,7 @@
     if (!entries.length) {
       const empty = document.createElement('p');
       empty.className = 'audit-empty';
-      empty.textContent = 'No audit events have been recorded for this mission.';
+      empty.textContent = 'No audit events have been recorded for this run.';
       list.appendChild(empty);
       return;
     }
@@ -934,8 +797,8 @@
 
   async function loadAudit(id) {
     const res = await fetch(`/api/runs/${id}/audit`);
-    if (!res.ok) { log('error', `Could not load the mission record (HTTP ${res.status})`); return; }
-    $('audit-title').textContent = `Record for mission ${id}`;
+    if (!res.ok) { log('error', `Could not load the run audit (HTTP ${res.status})`); return; }
+    $('audit-title').textContent = `Audit for run ${id}`;
     renderAudit(await res.json());
     $('audit').classList.remove('hidden');
     $('audit').scrollIntoView({ block: 'nearest' });
