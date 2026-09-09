@@ -48,5 +48,9 @@ class StaticPageTest {
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("<th>CI</th>")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("<th>Release</th>")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("<th>Verify</th>")));
+
+        mvc.perform(get("/assets/devflowai-guild-party.png"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType("image/png"));
     }
 }
