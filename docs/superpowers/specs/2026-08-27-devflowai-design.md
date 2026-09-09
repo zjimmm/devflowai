@@ -171,6 +171,11 @@ an interviewer can hand over a URL. Private-repo auth, push-back, and container
 isolation are explicitly out of initial scope — they are where the cost balloons
 and they add nothing to the thesis being demonstrated.
 
+> **Current repository-access limitation:** DevFlowAI currently targets public
+> `https://` repositories only. Private-repository cloning requires explicit
+> credential support before use; it is not inferred from a supplied repository
+> URL. The runtime path is `ClonedWorkspace.prepare()` and `RunRegistry.start()`.
+
 devflowai is a server-side web app, so cloning is not a preference — a server has
 no access to a remote user's disk. `LocalPathWorkspace` is coherent only in the
 single-user localhost case and is not planned.

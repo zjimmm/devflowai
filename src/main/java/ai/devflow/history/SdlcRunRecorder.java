@@ -62,8 +62,10 @@ public class SdlcRunRecorder {
             maybeRecordBuildResult(runId, data);
             maybeRecordPrUrl(runId, data);
             maybeRecordCiStatus(runId, data);
+            maybeRecordStaging(runId, data);
             maybeRecordRelease(runId, data);
             maybeRecordVerificationStatus(runId, data);
+            maybeRecordHealth(runId, data);
             maybeRecordRollback(runId, data);
             maybeFinishRun(runId, recorded.event().type(), recorded.event().message(), data);
         } catch (RuntimeException e) {
@@ -119,6 +121,17 @@ public class SdlcRunRecorder {
         });
     }
 
+    private void maybeRecordStaging(String runId, Map<String, Object> data) {
+        String stagingStatus = data.get("stagingStatus") instanceof String value ? value : null;
+        String stagingUrl = data.get("stagingUrl") instanceof String value ? value : null;
+        String verificationStatus = data.get("stagingVerificationStatus") instanceof String value ? value : null;
+        if (stagingStatus == null && stagingUrl == null && verificationStatus == null) return;
+        runs.findById(runId).ifPresent(run -> {
+            run.recordStaging(stagingStatus, stagingUrl, verificationStatus);
+            runs.save(run);
+        });
+    }
+
     private void maybeRecordRelease(String runId, Map<String, Object> data) {
         if (!(data.get("releaseStatus") instanceof String releaseStatus)) return;
         String releaseUrl = data.get("releaseUrl") instanceof String url ? url : null;
@@ -132,6 +145,15 @@ public class SdlcRunRecorder {
         if (!(data.get("verificationStatus") instanceof String verificationStatus)) return;
         runs.findById(runId).ifPresent(run -> {
             run.recordVerificationStatus(verificationStatus);
+            runs.save(run);
+        });
+    }
+
+    private void maybeRecordHealth(String runId, Map<String, Object> data) {
+        if (!(data.get("healthStatus") instanceof String healthStatus)) return;
+        String healthUrl = data.get("healthUrl") instanceof String url ? url : null;
+        runs.findById(runId).ifPresent(run -> {
+            run.recordHealth(healthStatus, healthUrl);
             runs.save(run);
         });
     }

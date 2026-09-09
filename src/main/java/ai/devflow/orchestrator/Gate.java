@@ -12,6 +12,7 @@ public enum Gate {
     PRE_FLIGHT,
     BEFORE_BUILD,
     BEFORE_COMMIT,
+    BEFORE_STAGING,
     BEFORE_RELEASE,
     BEFORE_ROLLBACK
 }

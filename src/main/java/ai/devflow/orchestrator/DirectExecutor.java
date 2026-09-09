@@ -55,12 +55,28 @@ public class DirectExecutor implements RunExecutor {
     public DirectExecutor(Agent coder, RunEventPublisher events, Duration buildTimeout, GitHubClient gitHubClient,
                           CiObserver ciObserver, ReleaseDispatcher releaseDispatcher, ReleaseObserver releaseObserver,
                           RollbackDispatcher rollbackDispatcher) {
+        this(coder, events, buildTimeout, gitHubClient, ciObserver, releaseDispatcher, releaseObserver,
+                rollbackDispatcher, OperationalHealthObserver.disabled());
+    }
+
+    public DirectExecutor(Agent coder, RunEventPublisher events, Duration buildTimeout, GitHubClient gitHubClient,
+                          CiObserver ciObserver, ReleaseDispatcher releaseDispatcher, ReleaseObserver releaseObserver,
+                          RollbackDispatcher rollbackDispatcher, OperationalHealthObserver operationalHealthObserver) {
+        this(coder, events, buildTimeout, gitHubClient, ciObserver, releaseDispatcher, releaseObserver,
+                rollbackDispatcher, operationalHealthObserver, StagingDispatcher.disabled());
+    }
+
+    public DirectExecutor(Agent coder, RunEventPublisher events, Duration buildTimeout, GitHubClient gitHubClient,
+                          CiObserver ciObserver, ReleaseDispatcher releaseDispatcher, ReleaseObserver releaseObserver,
+                          RollbackDispatcher rollbackDispatcher, OperationalHealthObserver operationalHealthObserver,
+                          StagingDispatcher stagingDispatcher) {
         this.coder = coder;
         this.events = events;
         this.buildTimeout = buildTimeout;
         this.gitHubClient = gitHubClient;
         this.ciObserver = ciObserver;
-        this.releaseCoordinator = new ReleaseCoordinator(gitHubClient, releaseDispatcher, releaseObserver, rollbackDispatcher);
+        this.releaseCoordinator = new ReleaseCoordinator(gitHubClient, releaseDispatcher, releaseObserver,
+                rollbackDispatcher, operationalHealthObserver, stagingDispatcher);
     }
 
     @Override
@@ -151,6 +167,17 @@ public class DirectExecutor implements RunExecutor {
             if (outcome.url() != null) doneData.put("releaseUrl", outcome.url());
             if (outcome.verificationStatus() != null) {
                 doneData.put("verificationStatus", outcome.verificationStatus().name());
+            }
+            if (outcome.healthStatus() != null) {
+                doneData.put("healthStatus", outcome.healthStatus().name());
+            }
+            if (outcome.healthUrl() != null) doneData.put("healthUrl", outcome.healthUrl());
+            if (outcome.stagingStatus() != null) {
+                doneData.put("stagingStatus", outcome.stagingStatus().name());
+            }
+            if (outcome.stagingUrl() != null) doneData.put("stagingUrl", outcome.stagingUrl());
+            if (outcome.stagingVerificationStatus() != null) {
+                doneData.put("stagingVerificationStatus", outcome.stagingVerificationStatus().name());
             }
             if (outcome.rollbackStatus() != null) {
                 doneData.put("rollbackStatus", outcome.rollbackStatus().name());

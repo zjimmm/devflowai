@@ -392,7 +392,7 @@
         <div class="archive-head"><div><p class="eyebrow">History</p><h2>Recent SDLC runs</h2></div><button id="history-refresh" class="button-secondary" type="button">Refresh</button></div>
         <div class="table-wrap">
           <table class="archive-table">
-            <thead><tr><th>Task</th><th>Strategy</th><th>Status</th><th>Build</th><th>PR</th><th>CI</th><th>Release</th><th>Verify</th><th>Rollback</th><th>Audit</th><th>Started</th></tr></thead>
+            <thead><tr><th>Task</th><th>Strategy</th><th>Status</th><th>Build</th><th>PR</th><th>CI</th><th>Staging</th><th>Release</th><th>Verify</th><th>Health</th><th>Rollback</th><th>Audit</th><th>Started</th></tr></thead>
             <tbody id="history-body"></tbody>
           </table>
         </div>
@@ -413,7 +413,7 @@
     { id: 'forge', label: 'Forge', phases: ['CODING'] },
     { id: 'inspect', label: 'Inspect', phases: ['REVIEWING'] },
     { id: 'quality', label: 'Quality', phases: ['BUILDING'] },
-    { id: 'ship', label: 'Ship', phases: ['COMMITTING', 'OPENING_PR', 'VALIDATING_CI', 'WAITING_FOR_RELEASE_APPROVAL', 'VERIFYING_RELEASE_PR', 'DISPATCHING_RELEASE', 'VERIFYING_DEPLOYMENT', 'WAITING_FOR_ROLLBACK_APPROVAL', 'DISPATCHING_ROLLBACK'] },
+    { id: 'ship', label: 'Ship', phases: ['COMMITTING', 'OPENING_PR', 'VALIDATING_CI', 'WAITING_FOR_STAGING_APPROVAL', 'VERIFYING_STAGING_PR', 'DISPATCHING_STAGING', 'VERIFYING_STAGING', 'WAITING_FOR_RELEASE_APPROVAL', 'VERIFYING_RELEASE_PR', 'DISPATCHING_RELEASE', 'VERIFYING_DEPLOYMENT', 'CHECKING_OPERATIONAL_HEALTH', 'WAITING_FOR_ROLLBACK_APPROVAL', 'DISPATCHING_ROLLBACK'] },
     { id: 'complete', label: 'Close', phases: ['DONE'] }
   ];
   const agentForPhase = {
@@ -424,10 +424,15 @@
     COMMITTING: ['delivery', 'Preparing delivery'],
     OPENING_PR: ['delivery', 'Opening pull request'],
     VALIDATING_CI: ['delivery', 'Watching CI'],
+    WAITING_FOR_STAGING_APPROVAL: ['delivery', 'Awaiting staging approval'],
+    VERIFYING_STAGING_PR: ['delivery', 'Confirming staging readiness'],
+    DISPATCHING_STAGING: ['delivery', 'Dispatching staging'],
+    VERIFYING_STAGING: ['quality', 'Verifying staging'],
     WAITING_FOR_RELEASE_APPROVAL: ['delivery', 'Awaiting release approval'],
     VERIFYING_RELEASE_PR: ['delivery', 'Confirming merge'],
     DISPATCHING_RELEASE: ['delivery', 'Dispatching release'],
     VERIFYING_DEPLOYMENT: ['delivery', 'Verifying delivery'],
+    CHECKING_OPERATIONAL_HEALTH: ['quality', 'Checking service health'],
     WAITING_FOR_ROLLBACK_APPROVAL: ['delivery', 'Awaiting rollback approval'],
     DISPATCHING_ROLLBACK: ['delivery', 'Dispatching rollback']
   };
@@ -567,8 +572,11 @@
     if (data && data.branch) $('active-branch').textContent = data.branch;
     if (data && data.success !== undefined) $('metric-build').textContent = data.success ? 'Passed' : 'Failed';
     if (data && data.ciStatus) $('metric-ci').textContent = titleCase(data.ciStatus);
+    if (data && data.stagingStatus) $('metric-delivery').textContent = `Staging: ${titleCase(data.stagingStatus)}`;
+    if (data && data.stagingVerificationStatus) $('metric-delivery').textContent = `Staging: ${titleCase(data.stagingVerificationStatus)}`;
     if (data && data.releaseStatus) $('metric-delivery').textContent = titleCase(data.releaseStatus);
     if (data && data.verificationStatus) $('metric-delivery').textContent = `Verified: ${titleCase(data.verificationStatus)}`;
+    if (data && data.healthStatus) $('metric-delivery').textContent = `Health: ${titleCase(data.healthStatus)}`;
     if (data && data.rollbackStatus) $('metric-delivery').textContent = `Rollback: ${titleCase(data.rollbackStatus)}`;
     if (type === 'gate') setRunState('Approval required', 'waiting');
     else if (type === 'done') setRunState('Run complete', 'complete');
@@ -628,8 +636,16 @@
       const link = safeLink(data.releaseUrl, 'View release workflow');
       if (link) appendEventDetail(event, link);
     }
+    if (data.stagingUrl) {
+      const link = safeLink(data.stagingUrl, 'View staging workflow');
+      if (link) appendEventDetail(event, link);
+    }
     if (data.rollbackUrl) {
       const link = safeLink(data.rollbackUrl, 'View rollback workflow');
+      if (link) appendEventDetail(event, link);
+    }
+    if (data.healthUrl) {
+      const link = safeLink(data.healthUrl, 'View health endpoint');
       if (link) appendEventDetail(event, link);
     }
     if (Array.isArray(data.ciChecks)) {
@@ -646,6 +662,8 @@
     $('gate-title').textContent = message;
     $('reason-label').textContent = data && data.gate === 'BEFORE_RELEASE'
       ? 'Decision note (optional — records why release was not dispatched)'
+      : data && data.gate === 'BEFORE_STAGING'
+        ? 'Decision note (optional — records why staging was not dispatched)'
       : data && data.gate === 'BEFORE_ROLLBACK'
         ? 'Decision note (optional — records why rollback was not dispatched)'
         : 'Decision note (optional — sends feedback to the workflow)';
@@ -761,9 +779,14 @@
       const pr = document.createElement('td');
       pr.append(safeLink(run.prUrl, 'Pull request') || document.createTextNode('—'));
       const ci = document.createElement('td'); ci.textContent = run.ciStatus || '—';
+      const staging = document.createElement('td');
+      const stagingLabel = [run.stagingStatus, run.stagingVerificationStatus].filter(Boolean).join(' / ') || '—';
+      staging.append(safeLink(run.stagingUrl, stagingLabel) || document.createTextNode(stagingLabel));
       const release = document.createElement('td');
       release.append(safeLink(run.releaseUrl, run.releaseStatus || 'Release') || document.createTextNode(run.releaseStatus || '—'));
       const verification = document.createElement('td'); verification.textContent = run.verificationStatus || '—';
+      const health = document.createElement('td');
+      health.append(safeLink(run.healthUrl, run.healthStatus || 'Health') || document.createTextNode(run.healthStatus || '—'));
       const rollback = document.createElement('td');
       rollback.append(safeLink(run.rollbackUrl, run.rollbackStatus || 'Rollback') || document.createTextNode(run.rollbackStatus || '—'));
       const audit = document.createElement('td');
@@ -772,7 +795,7 @@
       auditButton.onclick = () => loadAudit(run.runId);
       audit.appendChild(auditButton);
       const started = document.createElement('td'); started.textContent = new Date(run.startedAt).toLocaleString();
-      row.append(task, strategy, status, build, pr, ci, release, verification, rollback, audit, started);
+      row.append(task, strategy, status, build, pr, ci, staging, release, verification, health, rollback, audit, started);
       body.appendChild(row);
     });
   }

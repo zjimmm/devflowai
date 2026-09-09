@@ -248,8 +248,10 @@ class RunControllerTest {
         var older = new ai.devflow.history.SdlcRun("older", "fix a bug", "fixture",
                 ai.devflow.orchestrator.RunStrategy.DIRECT, java.time.Instant.now().minusSeconds(60));
         newer.recordCiStatus("PASSED");
+        newer.recordStaging("DISPATCHED", "https://github.com/o/r/actions/runs/6", "PASSED");
         newer.recordRelease("DISPATCHED", "https://github.com/o/r/actions/runs/7");
         newer.recordVerificationStatus("PASSED");
+        newer.recordHealth("PASSED", "https://service.example/health");
         newer.recordRollback("DISPATCHED", "https://github.com/o/r/actions/runs/8");
         when(history.findTop50ByOrderByStartedAtDesc()).thenReturn(java.util.List.of(newer, older));
 
@@ -260,9 +262,14 @@ class RunControllerTest {
                 .andExpect(jsonPath("$[0].status").value("RUNNING"))
                 .andExpect(jsonPath("$[0].strategy").value("ORCHESTRATED"))
                 .andExpect(jsonPath("$[0].ciStatus").value("PASSED"))
+                .andExpect(jsonPath("$[0].stagingStatus").value("DISPATCHED"))
+                .andExpect(jsonPath("$[0].stagingUrl").value("https://github.com/o/r/actions/runs/6"))
+                .andExpect(jsonPath("$[0].stagingVerificationStatus").value("PASSED"))
                 .andExpect(jsonPath("$[0].releaseStatus").value("DISPATCHED"))
                 .andExpect(jsonPath("$[0].releaseUrl").value("https://github.com/o/r/actions/runs/7"))
                 .andExpect(jsonPath("$[0].verificationStatus").value("PASSED"))
+                .andExpect(jsonPath("$[0].healthStatus").value("PASSED"))
+                .andExpect(jsonPath("$[0].healthUrl").value("https://service.example/health"))
                 .andExpect(jsonPath("$[0].rollbackStatus").value("DISPATCHED"))
                 .andExpect(jsonPath("$[0].rollbackUrl").value("https://github.com/o/r/actions/runs/8"))
                 .andExpect(jsonPath("$[1].runId").value("older"))

@@ -6,16 +6,20 @@ import ai.devflow.memory.FileMemoryStore;
 import ai.devflow.memory.MemoryStore;
 import ai.devflow.orchestrator.DirectExecutor;
 import ai.devflow.orchestrator.CiObserver;
+import ai.devflow.orchestrator.GitHubActionsRollbackDispatcher;
 import ai.devflow.orchestrator.GitHubActionsReleaseDispatcher;
+import ai.devflow.orchestrator.GitHubActionsStagingDispatcher;
+import ai.devflow.orchestrator.HttpOperationalHealthObserver;
+import ai.devflow.orchestrator.OperationalHealthObserver;
 import ai.devflow.orchestrator.Orchestrator;
 import ai.devflow.orchestrator.PollingCiObserver;
 import ai.devflow.orchestrator.PollingReleaseObserver;
 import ai.devflow.orchestrator.ReleaseDispatcher;
 import ai.devflow.orchestrator.ReleaseObserver;
-import ai.devflow.orchestrator.GitHubActionsRollbackDispatcher;
 import ai.devflow.orchestrator.RollbackDispatcher;
 import ai.devflow.orchestrator.RunExecutor;
 import ai.devflow.orchestrator.RunRegistry;
+import ai.devflow.orchestrator.StagingDispatcher;
 import ai.devflow.policy.ConfigurablePolicyEngine;
 import ai.devflow.policy.PolicyEngine;
 import ai.devflow.skill.FileSkillStore;
@@ -150,6 +154,19 @@ public class OrchestrationConfig {
     }
 
     @Bean
+    StagingDispatcher stagingDispatcher(GitHubClient gitHubClient,
+                                        @Value("${devflowai.staging.workflow:}") String workflow,
+                                        @Value("${devflowai.staging.ref:main}") String ref) {
+        return new GitHubActionsStagingDispatcher(gitHubClient, workflow, ref);
+    }
+
+    @Bean
+    OperationalHealthObserver operationalHealthObserver(@Value("${devflowai.health.url:}") String healthUrl,
+                                                        @Value("${devflowai.health.timeout-seconds:10}") long timeoutSeconds) {
+        return new HttpOperationalHealthObserver(healthUrl, Duration.ofSeconds(timeoutSeconds));
+    }
+
+    @Bean
     Orchestrator orchestrator(Agent coderAgent, Agent reviewerAgent, Agent plannerAgent, SkillPicker skillPicker, Scribe scribe,
                               SkillStore skillStore, MemoryStore memoryStore, RunEventPublisher events,
                               @Value("${devflowai.review.max-iterations:3}") int maxReviewIterations,
@@ -157,19 +174,22 @@ public class OrchestrationConfig {
                               @Value("${devflowai.build.timeout-minutes:5}") long buildTimeoutMinutes,
                               PolicyEngine policyEngine, GitHubClient gitHubClient, CiObserver ciObserver,
                               ReleaseDispatcher releaseDispatcher, ReleaseObserver releaseObserver,
-                              RollbackDispatcher rollbackDispatcher) {
+                              RollbackDispatcher rollbackDispatcher, OperationalHealthObserver operationalHealthObserver,
+                              StagingDispatcher stagingDispatcher) {
         return new Orchestrator(coderAgent, reviewerAgent, plannerAgent, skillPicker, scribe, skillStore, memoryStore,
                 events, maxReviewIterations, maxHumanIterations, Duration.ofMinutes(buildTimeoutMinutes), policyEngine,
-                gitHubClient, ciObserver, releaseDispatcher, releaseObserver, rollbackDispatcher);
+                gitHubClient, ciObserver, releaseDispatcher, releaseObserver, rollbackDispatcher,
+                operationalHealthObserver, stagingDispatcher);
     }
 
     @Bean
     RunExecutor directExecutor(Agent coderAgent, RunEventPublisher events,
                               @Value("${devflowai.build.timeout-minutes:5}") long buildTimeoutMinutes,
                               GitHubClient gitHubClient, CiObserver ciObserver, ReleaseDispatcher releaseDispatcher,
-                              ReleaseObserver releaseObserver, RollbackDispatcher rollbackDispatcher) {
+                              ReleaseObserver releaseObserver, RollbackDispatcher rollbackDispatcher,
+                              OperationalHealthObserver operationalHealthObserver, StagingDispatcher stagingDispatcher) {
         return new DirectExecutor(coderAgent, events, Duration.ofMinutes(buildTimeoutMinutes), gitHubClient, ciObserver,
-                releaseDispatcher, releaseObserver, rollbackDispatcher);
+                releaseDispatcher, releaseObserver, rollbackDispatcher, operationalHealthObserver, stagingDispatcher);
     }
 
     @Bean

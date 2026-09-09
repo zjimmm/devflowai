@@ -100,6 +100,30 @@ public class Orchestrator implements RunExecutor {
                         Duration buildTimeout, PolicyEngine policyEngine, GitHubClient gitHubClient,
                         CiObserver ciObserver, ReleaseDispatcher releaseDispatcher, ReleaseObserver releaseObserver,
                         RollbackDispatcher rollbackDispatcher) {
+        this(coder, reviewer, planner, skillPicker, scribe, skillStore, memoryStore, events,
+                maxReviewIterations, maxHumanIterations, buildTimeout, policyEngine, gitHubClient, ciObserver,
+                releaseDispatcher, releaseObserver, rollbackDispatcher, OperationalHealthObserver.disabled());
+    }
+
+    public Orchestrator(Agent coder, Agent reviewer, Agent planner, SkillPicker skillPicker, Scribe scribe,
+                        SkillStore skillStore, MemoryStore memoryStore,
+                        RunEventPublisher events, int maxReviewIterations, int maxHumanIterations,
+                        Duration buildTimeout, PolicyEngine policyEngine, GitHubClient gitHubClient,
+                        CiObserver ciObserver, ReleaseDispatcher releaseDispatcher, ReleaseObserver releaseObserver,
+                        RollbackDispatcher rollbackDispatcher, OperationalHealthObserver operationalHealthObserver) {
+        this(coder, reviewer, planner, skillPicker, scribe, skillStore, memoryStore, events,
+                maxReviewIterations, maxHumanIterations, buildTimeout, policyEngine, gitHubClient, ciObserver,
+                releaseDispatcher, releaseObserver, rollbackDispatcher, operationalHealthObserver,
+                StagingDispatcher.disabled());
+    }
+
+    public Orchestrator(Agent coder, Agent reviewer, Agent planner, SkillPicker skillPicker, Scribe scribe,
+                        SkillStore skillStore, MemoryStore memoryStore,
+                        RunEventPublisher events, int maxReviewIterations, int maxHumanIterations,
+                        Duration buildTimeout, PolicyEngine policyEngine, GitHubClient gitHubClient,
+                        CiObserver ciObserver, ReleaseDispatcher releaseDispatcher, ReleaseObserver releaseObserver,
+                        RollbackDispatcher rollbackDispatcher, OperationalHealthObserver operationalHealthObserver,
+                        StagingDispatcher stagingDispatcher) {
         this.coder = coder;
         this.reviewer = reviewer;
         this.planner = planner;
@@ -114,7 +138,8 @@ public class Orchestrator implements RunExecutor {
         this.policyEngine = policyEngine;
         this.gitHubClient = gitHubClient;
         this.ciObserver = ciObserver;
-        this.releaseCoordinator = new ReleaseCoordinator(gitHubClient, releaseDispatcher, releaseObserver, rollbackDispatcher);
+        this.releaseCoordinator = new ReleaseCoordinator(gitHubClient, releaseDispatcher, releaseObserver,
+                rollbackDispatcher, operationalHealthObserver, stagingDispatcher);
     }
 
     public RunOutcome run(RunState state, ApprovalGate gate) {
@@ -360,6 +385,17 @@ public class Orchestrator implements RunExecutor {
                 if (outcome.url() != null) doneData.put("releaseUrl", outcome.url());
                 if (outcome.verificationStatus() != null) {
                     doneData.put("verificationStatus", outcome.verificationStatus().name());
+                }
+                if (outcome.healthStatus() != null) {
+                    doneData.put("healthStatus", outcome.healthStatus().name());
+                }
+                if (outcome.healthUrl() != null) doneData.put("healthUrl", outcome.healthUrl());
+                if (outcome.stagingStatus() != null) {
+                    doneData.put("stagingStatus", outcome.stagingStatus().name());
+                }
+                if (outcome.stagingUrl() != null) doneData.put("stagingUrl", outcome.stagingUrl());
+                if (outcome.stagingVerificationStatus() != null) {
+                    doneData.put("stagingVerificationStatus", outcome.stagingVerificationStatus().name());
                 }
                 if (outcome.rollbackStatus() != null) {
                     doneData.put("rollbackStatus", outcome.rollbackStatus().name());

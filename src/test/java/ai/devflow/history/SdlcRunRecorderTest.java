@@ -134,6 +134,23 @@ class SdlcRunRecorderTest {
     }
 
     @Test
+    void stagingEventsRecordDispatchAndVerification() {
+        recorder.onRunRecorded(new RunRecorded("r-staging", new RunEvent("step", "start",
+                Map.of("task", "t", "repoSlug", "fixture", "phase", "PREPARING", "strategy", "DIRECT"))));
+
+        recorder.onRunRecorded(new RunRecorded("r-staging", new RunEvent("step", "dispatched",
+                Map.of("phase", "DISPATCHING_STAGING", "stagingStatus", "DISPATCHED",
+                        "stagingUrl", "https://github.com/o/r/actions/runs/6"))));
+        recorder.onRunRecorded(new RunRecorded("r-staging", new RunEvent("step", "verified",
+                Map.of("phase", "VERIFYING_STAGING", "stagingVerificationStatus", "PASSED"))));
+
+        var run = runs.findById("r-staging").orElseThrow();
+        assertThat(run.stagingStatus()).isEqualTo("DISPATCHED");
+        assertThat(run.stagingUrl()).isEqualTo("https://github.com/o/r/actions/runs/6");
+        assertThat(run.stagingVerificationStatus()).isEqualTo("PASSED");
+    }
+
+    @Test
     void aReleaseEventRecordsItsStatusAndUrl() {
         recorder.onRunRecorded(new RunRecorded("r-release", new RunEvent("step", "start",
                 Map.of("task", "t", "repoSlug", "fixture", "phase", "PREPARING", "strategy", "DIRECT"))));
@@ -158,6 +175,20 @@ class SdlcRunRecorderTest {
                 Map.of("phase", "VERIFYING_DEPLOYMENT", "verificationStatus", "PASSED"))));
 
         assertThat(runs.findById("r-verification").orElseThrow().verificationStatus()).isEqualTo("PASSED");
+    }
+
+    @Test
+    void aHealthEventRecordsItsStatusAndUrl() {
+        recorder.onRunRecorded(new RunRecorded("r-health", new RunEvent("step", "start",
+                Map.of("task", "t", "repoSlug", "fixture", "phase", "PREPARING", "strategy", "DIRECT"))));
+
+        recorder.onRunRecorded(new RunRecorded("r-health", new RunEvent("step", "checked",
+                Map.of("phase", "CHECKING_OPERATIONAL_HEALTH", "healthStatus", "PASSED",
+                        "healthUrl", "https://service.example/health"))));
+
+        var run = runs.findById("r-health").orElseThrow();
+        assertThat(run.healthStatus()).isEqualTo("PASSED");
+        assertThat(run.healthUrl()).isEqualTo("https://service.example/health");
     }
 
     @Test

@@ -44,9 +44,14 @@ public class SdlcRun {
     private Boolean buildSucceeded;
     private String prUrl;
     private String ciStatus;
+    private String stagingStatus;
+    private String stagingUrl;
+    private String stagingVerificationStatus;
     private String releaseStatus;
     private String releaseUrl;
     private String verificationStatus;
+    private String healthStatus;
+    private String healthUrl;
     private String rollbackStatus;
     private String rollbackUrl;
 
@@ -74,9 +79,14 @@ public class SdlcRun {
     public Boolean buildSucceeded() { return buildSucceeded; }
     public String prUrl() { return prUrl; }
     public String ciStatus() { return ciStatus; }
+    public String stagingStatus() { return stagingStatus; }
+    public String stagingUrl() { return stagingUrl; }
+    public String stagingVerificationStatus() { return stagingVerificationStatus; }
     public String releaseStatus() { return releaseStatus; }
     public String releaseUrl() { return releaseUrl; }
     public String verificationStatus() { return verificationStatus; }
+    public String healthStatus() { return healthStatus; }
+    public String healthUrl() { return healthUrl; }
     public String rollbackStatus() { return rollbackStatus; }
     public String rollbackUrl() { return rollbackUrl; }
 
@@ -100,6 +110,12 @@ public class SdlcRun {
         this.ciStatus = ciStatus;
     }
 
+    public void recordStaging(String stagingStatus, String stagingUrl, String stagingVerificationStatus) {
+        if (stagingStatus != null) this.stagingStatus = stagingStatus;
+        if (stagingUrl != null) this.stagingUrl = stagingUrl;
+        if (stagingVerificationStatus != null) this.stagingVerificationStatus = stagingVerificationStatus;
+    }
+
     public void recordRelease(String releaseStatus, String releaseUrl) {
         this.releaseStatus = releaseStatus;
         if (releaseUrl != null) this.releaseUrl = releaseUrl;
@@ -107,6 +123,11 @@ public class SdlcRun {
 
     public void recordVerificationStatus(String verificationStatus) {
         this.verificationStatus = verificationStatus;
+    }
+
+    public void recordHealth(String healthStatus, String healthUrl) {
+        this.healthStatus = healthStatus;
+        if (healthUrl != null) this.healthUrl = healthUrl;
     }
 
     public void recordRollback(String rollbackStatus, String rollbackUrl) {
