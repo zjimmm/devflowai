@@ -29,6 +29,16 @@ public class PlannerAgent implements Agent {
         StringBuilder sb = new StringBuilder();
         sb.append("Task: ").append(state.task()).append("\n\n");
 
+        if (state.requirementAnalysis() != null) {
+            sb.append("Structured requirement analysis:\n")
+              .append(state.requirementAnalysis().summary())
+              .append("\n\nAssumptions:\n- ")
+              .append(String.join("\n- ", state.requirementAnalysis().assumptions()))
+              .append("\n\nEdge cases:\n- ")
+              .append(String.join("\n- ", state.requirementAnalysis().edgeCases()))
+              .append("\n\n");
+        }
+
         if (!state.memory().isBlank()) {
             sb.append("Known facts about this repository from previous runs:\n")
               .append(state.memory())
@@ -41,7 +51,7 @@ public class PlannerAgent implements Agent {
               .append("\n\n");
         }
 
-        sb.append("Write a short, concrete step-by-step plan for how the coder should implement this task. ")
+        sb.append("Write a short, concrete step-by-step plan for how the coder should implement this task and satisfy every acceptance criterion. ")
           .append("Do not write any code yourself. Keep it to a few sentences or a short numbered list.");
         return sb.toString();
     }

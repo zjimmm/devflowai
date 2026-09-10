@@ -614,8 +614,10 @@ above shipped the Planner piece of it. The rest — test-writer/doc-writer
 agents and evaluation — now falls under the PRD-driven sub-project sequence:
 
 - **Not yet scheduled a sub-project number** — the rest of PRD Phase 2:
-  requirement analysis, acceptance-criteria extraction, architecture review,
-  risk classification, and a documentation stage. Sub-project 2 deliberately
+  architecture review, risk classification, and a documentation stage.
+  Requirement analysis and acceptance-criteria extraction shipped on 2026-09-09
+  as a dedicated tool-free analyst before the Planner, with a bounded human
+  clarification gate. Sub-project 2 deliberately
   shipped only the security/quality gate's one enforceable rule
   (build-must-pass) plus the `PolicyEngine` seam these four stages will each
   need — not all five PRD Phase 2 items, which the original brainstorming

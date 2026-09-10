@@ -156,6 +156,91 @@ class ReleaseCoordinatorTest {
     }
 
     @Test
+    void failedSmokeTestsBlockProductionReleaseAfterStaging() throws Exception {
+        var client = new RecordingClient(true);
+        SmokeTestRunner failedSmokeTests = new SmokeTestRunner() {
+            @Override public boolean isConfigured() { return true; }
+            @Override public SmokeTestObservation run() {
+                return new SmokeTestObservation(SmokeTestStatus.FAILED, List.of(
+                        new OperationalHealthObservation(OperationalHealthStatus.FAILED,
+                                "https://service.example/smoke", 503)));
+            }
+        };
+        var coordinator = new ReleaseCoordinator(client,
+                new GitHubActionsReleaseDispatcher(client, "release.yml", "main"), passedObserver(),
+                RollbackDispatcher.disabled(), OperationalHealthObserver.disabled(),
+                new GitHubActionsStagingDispatcher(client, "staging.yml", "main"), failedSmokeTests);
+        var gate = new ApprovalGate(Duration.ofSeconds(5));
+
+        Future<Optional<ReleaseCoordinator.ReleaseOutcome>> future = pool.submit(() -> coordinator.dispatchIfRequested(
+                releaseState(), gate, "https://github.com/o/r/pull/9", 9, CiStatus.PASSED, event -> { }));
+        awaitGate(gate, Gate.BEFORE_STAGING);
+        gate.decide(ApprovalDecision.approve());
+
+        var outcome = future.get().orElseThrow();
+        assertThat(outcome.stagingVerificationStatus()).isEqualTo(VerificationStatus.PASSED);
+        assertThat(outcome.smokeStatus()).isEqualTo(SmokeTestStatus.FAILED);
+        assertThat(outcome.smokeUrl()).isEqualTo("https://service.example/smoke");
+        assertThat(outcome.status()).isEqualTo(ReleaseStatus.BLOCKED);
+        assertThat(client.workflows).containsExactly("staging.yml");
+    }
+
+    @Test
+    void passedSmokeTestsAllowProductionApproval() throws Exception {
+        var client = new RecordingClient(true);
+        SmokeTestRunner passedSmokeTests = new SmokeTestRunner() {
+            @Override public boolean isConfigured() { return true; }
+            @Override public SmokeTestObservation run() {
+                return new SmokeTestObservation(SmokeTestStatus.PASSED, List.of(
+                        new OperationalHealthObservation(OperationalHealthStatus.PASSED,
+                                "https://service.example/smoke", 204)));
+            }
+        };
+        var coordinator = new ReleaseCoordinator(client,
+                new GitHubActionsReleaseDispatcher(client, "release.yml", "main"), passedObserver(),
+                RollbackDispatcher.disabled(), OperationalHealthObserver.disabled(),
+                new GitHubActionsStagingDispatcher(client, "staging.yml", "main"), passedSmokeTests);
+        var gate = new ApprovalGate(Duration.ofSeconds(5));
+
+        Future<Optional<ReleaseCoordinator.ReleaseOutcome>> future = pool.submit(() -> coordinator.dispatchIfRequested(
+                releaseState(), gate, "https://github.com/o/r/pull/9", 9, CiStatus.PASSED, event -> { }));
+        awaitGate(gate, Gate.BEFORE_STAGING);
+        gate.decide(ApprovalDecision.approve());
+        awaitGate(gate, Gate.BEFORE_RELEASE);
+        gate.decide(ApprovalDecision.approve());
+
+        var outcome = future.get().orElseThrow();
+        assertThat(outcome.smokeStatus()).isEqualTo(SmokeTestStatus.PASSED);
+        assertThat(outcome.status()).isEqualTo(ReleaseStatus.DISPATCHED);
+        assertThat(client.workflows).containsExactly("staging.yml", "release.yml");
+    }
+
+    @Test
+    void configuredSmokeTestsWithoutStagingBlockReleaseWithoutRunning() {
+        var client = new RecordingClient(true);
+        var smokeRan = new java.util.concurrent.atomic.AtomicBoolean();
+        SmokeTestRunner smokeTests = new SmokeTestRunner() {
+            @Override public boolean isConfigured() { return true; }
+            @Override public SmokeTestObservation run() {
+                smokeRan.set(true);
+                return new SmokeTestObservation(SmokeTestStatus.PASSED, List.of());
+            }
+        };
+        var coordinator = new ReleaseCoordinator(client,
+                new GitHubActionsReleaseDispatcher(client, "release.yml", "main"), passedObserver(),
+                RollbackDispatcher.disabled(), OperationalHealthObserver.disabled(), StagingDispatcher.disabled(),
+                smokeTests);
+
+        var outcome = coordinator.dispatchIfRequested(releaseState(), new ApprovalGate(Duration.ofSeconds(5)),
+                "https://github.com/o/r/pull/9", 9, CiStatus.PASSED, event -> { }).orElseThrow();
+
+        assertThat(outcome.status()).isEqualTo(ReleaseStatus.BLOCKED);
+        assertThat(outcome.smokeStatus()).isEqualTo(SmokeTestStatus.BLOCKED);
+        assertThat(smokeRan).isFalse();
+        assertThat(client.workflows).isEmpty();
+    }
+
+    @Test
     void failedDeploymentRequiresSeparateRollbackApprovalBeforeDispatch() throws Exception {
         var client = new RecordingClient(true);
         var coordinator = new ReleaseCoordinator(client,

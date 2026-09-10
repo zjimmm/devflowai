@@ -2,6 +2,7 @@ package ai.devflow.orchestrator;
 
 import ai.devflow.agent.AgentResult;
 import ai.devflow.agent.Finding;
+import ai.devflow.agent.RequirementAnalysis;
 import ai.devflow.agent.TokenUsage;
 import ai.devflow.skill.ScribeDraft;
 import ai.devflow.tools.GitTools;
@@ -33,6 +34,7 @@ public class RunState {
     private final List<Finding> openFindings = new ArrayList<>();
     private final List<String> loadedSkills = new ArrayList<>();
     private final List<Finding> allFindings = new ArrayList<>();
+    private final List<String> requirementClarifications = new ArrayList<>();
 
     private int reviewIterations = 0;
     private int humanIterations = 0;
@@ -40,6 +42,7 @@ public class RunState {
     private RunPhase phase = RunPhase.PREPARING;
     private String memory = "";
     private String plan = "";
+    private RequirementAnalysis requirementAnalysis;
     private ScribeDraft pendingScribeDraft = ScribeDraft.EMPTY;
 
     public RunState(String runId, String task, Workspace workspace) {
@@ -81,6 +84,8 @@ public class RunState {
     public synchronized List<Finding> allFindings() { return List.copyOf(allFindings); }
     public synchronized String memory() { return memory; }
     public synchronized String plan() { return plan; }
+    public synchronized RequirementAnalysis requirementAnalysis() { return requirementAnalysis; }
+    public synchronized List<String> requirementClarifications() { return List.copyOf(requirementClarifications); }
     public synchronized ScribeDraft pendingScribeDraft() { return pendingScribeDraft; }
     public synchronized int reviewIterations() { return reviewIterations; }
     public synchronized int humanIterations() { return humanIterations; }
@@ -90,6 +95,12 @@ public class RunState {
     public synchronized void setPhase(RunPhase phase) { this.phase = phase; }
     public synchronized void setMemory(String memory) { this.memory = memory == null ? "" : memory; }
     public synchronized void setPlan(String plan) { this.plan = plan == null ? "" : plan; }
+    public synchronized void setRequirementAnalysis(RequirementAnalysis requirementAnalysis) {
+        this.requirementAnalysis = requirementAnalysis;
+    }
+    public synchronized void addRequirementClarification(String clarification) {
+        if (clarification != null && !clarification.isBlank()) requirementClarifications.add(clarification.trim());
+    }
     public synchronized void setPendingScribeDraft(ScribeDraft draft) {
         this.pendingScribeDraft = draft == null ? ScribeDraft.EMPTY : draft;
     }

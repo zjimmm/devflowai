@@ -392,7 +392,7 @@
         <div class="archive-head"><div><p class="eyebrow">History</p><h2>Recent SDLC runs</h2></div><button id="history-refresh" class="button-secondary" type="button">Refresh</button></div>
         <div class="table-wrap">
           <table class="archive-table">
-            <thead><tr><th>Task</th><th>Strategy</th><th>Status</th><th>Build</th><th>PR</th><th>CI</th><th>Staging</th><th>Release</th><th>Verify</th><th>Health</th><th>Rollback</th><th>Audit</th><th>Started</th></tr></thead>
+            <thead><tr><th>Task</th><th>Strategy</th><th>Requirements</th><th>Status</th><th>Build</th><th>PR</th><th>CI</th><th>Staging</th><th>Smoke</th><th>Release</th><th>Verify</th><th>Health</th><th>Rollback</th><th>Audit</th><th>Started</th></tr></thead>
             <tbody id="history-body"></tbody>
           </table>
         </div>
@@ -409,15 +409,18 @@
 <script>
   const $ = (id) => document.getElementById(id);
   const stageGroups = [
-    { id: 'intake', label: 'Intake', phases: ['PREPARING'] },
-    { id: 'forge', label: 'Forge', phases: ['CODING'] },
+    { id: 'intake', label: 'Intake', phases: ['PREPARING', 'ANALYZING_REQUIREMENTS', 'WAITING_FOR_REQUIREMENTS_CLARIFICATION'] },
+    { id: 'forge', label: 'Forge', phases: ['PLANNING', 'CODING'] },
     { id: 'inspect', label: 'Inspect', phases: ['REVIEWING'] },
     { id: 'quality', label: 'Quality', phases: ['BUILDING'] },
-    { id: 'ship', label: 'Ship', phases: ['COMMITTING', 'OPENING_PR', 'VALIDATING_CI', 'WAITING_FOR_STAGING_APPROVAL', 'VERIFYING_STAGING_PR', 'DISPATCHING_STAGING', 'VERIFYING_STAGING', 'WAITING_FOR_RELEASE_APPROVAL', 'VERIFYING_RELEASE_PR', 'DISPATCHING_RELEASE', 'VERIFYING_DEPLOYMENT', 'CHECKING_OPERATIONAL_HEALTH', 'WAITING_FOR_ROLLBACK_APPROVAL', 'DISPATCHING_ROLLBACK'] },
+    { id: 'ship', label: 'Ship', phases: ['COMMITTING', 'OPENING_PR', 'VALIDATING_CI', 'WAITING_FOR_STAGING_APPROVAL', 'VERIFYING_STAGING_PR', 'DISPATCHING_STAGING', 'VERIFYING_STAGING', 'RUNNING_SMOKE_TESTS', 'WAITING_FOR_RELEASE_APPROVAL', 'VERIFYING_RELEASE_PR', 'DISPATCHING_RELEASE', 'VERIFYING_DEPLOYMENT', 'CHECKING_OPERATIONAL_HEALTH', 'WAITING_FOR_ROLLBACK_APPROVAL', 'DISPATCHING_ROLLBACK'] },
     { id: 'complete', label: 'Close', phases: ['DONE'] }
   ];
   const agentForPhase = {
     PREPARING: ['planner', 'Preparing brief'],
+    ANALYZING_REQUIREMENTS: ['planner', 'Structuring requirements'],
+    WAITING_FOR_REQUIREMENTS_CLARIFICATION: ['planner', 'Awaiting clarification'],
+    PLANNING: ['planner', 'Planning implementation'],
     CODING: ['coder', 'Forging change'],
     REVIEWING: ['reviewer', 'Inspecting diff'],
     BUILDING: ['quality', 'Guarding quality'],
@@ -428,6 +431,7 @@
     VERIFYING_STAGING_PR: ['delivery', 'Confirming staging readiness'],
     DISPATCHING_STAGING: ['delivery', 'Dispatching staging'],
     VERIFYING_STAGING: ['quality', 'Verifying staging'],
+    RUNNING_SMOKE_TESTS: ['quality', 'Running smoke tests'],
     WAITING_FOR_RELEASE_APPROVAL: ['delivery', 'Awaiting release approval'],
     VERIFYING_RELEASE_PR: ['delivery', 'Confirming merge'],
     DISPATCHING_RELEASE: ['delivery', 'Dispatching release'],
@@ -574,6 +578,7 @@
     if (data && data.ciStatus) $('metric-ci').textContent = titleCase(data.ciStatus);
     if (data && data.stagingStatus) $('metric-delivery').textContent = `Staging: ${titleCase(data.stagingStatus)}`;
     if (data && data.stagingVerificationStatus) $('metric-delivery').textContent = `Staging: ${titleCase(data.stagingVerificationStatus)}`;
+    if (data && data.smokeStatus) $('metric-delivery').textContent = `Smoke: ${titleCase(data.smokeStatus)}`;
     if (data && data.releaseStatus) $('metric-delivery').textContent = titleCase(data.releaseStatus);
     if (data && data.verificationStatus) $('metric-delivery').textContent = `Verified: ${titleCase(data.verificationStatus)}`;
     if (data && data.healthStatus) $('metric-delivery').textContent = `Health: ${titleCase(data.healthStatus)}`;
@@ -627,6 +632,8 @@
     body.textContent = message;
     event.append(meta, body);
     if (Array.isArray(data.filesTouched) && data.filesTouched.length) appendEventDetail(event, data.filesTouched.join(' · '));
+    if (Array.isArray(data.functionalRequirements) && data.functionalRequirements.length) appendEventDetail(event, `Requirements\n${data.functionalRequirements.join('\n')}`);
+    if (Array.isArray(data.acceptanceCriteria) && data.acceptanceCriteria.length) appendEventDetail(event, `Acceptance criteria\n${data.acceptanceCriteria.join('\n')}`);
     if (data.inputTokens !== undefined || data.outputTokens !== undefined) appendEventDetail(event, `${data.inputTokens || 0} input tokens · ${data.outputTokens || 0} output tokens`);
     if (data.prUrl) {
       const link = safeLink(data.prUrl, 'View pull request');
@@ -638,6 +645,10 @@
     }
     if (data.stagingUrl) {
       const link = safeLink(data.stagingUrl, 'View staging workflow');
+      if (link) appendEventDetail(event, link);
+    }
+    if (data.smokeUrl) {
+      const link = safeLink(data.smokeUrl, 'View smoke endpoint');
       if (link) appendEventDetail(event, link);
     }
     if (data.rollbackUrl) {
@@ -666,11 +677,14 @@
         ? 'Decision note (optional — records why staging was not dispatched)'
       : data && data.gate === 'BEFORE_ROLLBACK'
         ? 'Decision note (optional — records why rollback was not dispatched)'
+      : data && data.gate === 'REQUIREMENTS_CLARIFICATION'
+        ? 'Clarification (reject with guidance to re-analyze, or approve to accept assumptions)'
         : 'Decision note (optional — sends feedback to the workflow)';
     const details = [];
     if (Array.isArray(data && data.filesTouched) && data.filesTouched.length) details.push(data.filesTouched.join('\n'));
     if (data && data.skillDraft) details.push(`Learned: ${data.skillDraft.name} — ${data.skillDraft.description}`);
     if (data && data.memoryFact) details.push(`Remembered: ${data.memoryFact}`);
+    if (data && data.gate === 'REQUIREMENTS_CLARIFICATION' && data.clarificationQuestion) details.push(data.clarificationQuestion);
     $('gate-detail').textContent = details.join('\n\n') || 'Review the current run activity, then make a decision.';
     $('reason').value = '';
     $('gate').classList.remove('hidden');
@@ -774,6 +788,10 @@
       const task = document.createElement('td');
       task.textContent = run.task.length > 72 ? `${run.task.slice(0, 72)}…` : run.task;
       const strategy = document.createElement('td'); strategy.textContent = run.strategy || '';
+      const requirements = document.createElement('td');
+      requirements.textContent = run.requirementStatus
+        ? `${titleCase(run.requirementStatus)}${run.acceptanceCriteriaCount == null ? '' : ` · ${run.acceptanceCriteriaCount} criteria`}`
+        : '—';
       const status = document.createElement('td'); status.appendChild(statusBadge(run.status));
       const build = document.createElement('td'); build.textContent = run.buildSucceeded === true ? 'Passed' : run.buildSucceeded === false ? 'Failed' : '—';
       const pr = document.createElement('td');
@@ -782,6 +800,8 @@
       const staging = document.createElement('td');
       const stagingLabel = [run.stagingStatus, run.stagingVerificationStatus].filter(Boolean).join(' / ') || '—';
       staging.append(safeLink(run.stagingUrl, stagingLabel) || document.createTextNode(stagingLabel));
+      const smoke = document.createElement('td');
+      smoke.append(safeLink(run.smokeUrl, run.smokeStatus || 'Smoke') || document.createTextNode(run.smokeStatus || '—'));
       const release = document.createElement('td');
       release.append(safeLink(run.releaseUrl, run.releaseStatus || 'Release') || document.createTextNode(run.releaseStatus || '—'));
       const verification = document.createElement('td'); verification.textContent = run.verificationStatus || '—';
@@ -795,7 +815,7 @@
       auditButton.onclick = () => loadAudit(run.runId);
       audit.appendChild(auditButton);
       const started = document.createElement('td'); started.textContent = new Date(run.startedAt).toLocaleString();
-      row.append(task, strategy, status, build, pr, ci, staging, release, verification, health, rollback, audit, started);
+      row.append(task, strategy, requirements, status, build, pr, ci, staging, smoke, release, verification, health, rollback, audit, started);
       body.appendChild(row);
     });
   }

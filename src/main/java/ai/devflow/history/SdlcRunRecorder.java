@@ -58,11 +58,13 @@ public class SdlcRunRecorder {
             safelyRecordAudit(runId, () -> recordAuditEvent(runId, recorded.event(), data));
             maybeCreateRun(runId, data);
             maybeRecordStage(runId, data);
+            maybeRecordRequirements(runId, data);
             maybeRecordFindings(runId, data);
             maybeRecordBuildResult(runId, data);
             maybeRecordPrUrl(runId, data);
             maybeRecordCiStatus(runId, data);
             maybeRecordStaging(runId, data);
+            maybeRecordSmoke(runId, data);
             maybeRecordRelease(runId, data);
             maybeRecordVerificationStatus(runId, data);
             maybeRecordHealth(runId, data);
@@ -105,6 +107,17 @@ public class SdlcRunRecorder {
         });
     }
 
+    private void maybeRecordRequirements(String runId, Map<String, Object> data) {
+        String requirementStatus = data.get("requirementStatus") instanceof String value ? value : null;
+        Integer acceptanceCriteriaCount = data.get("acceptanceCriteriaCount") instanceof Number value
+                ? value.intValue() : null;
+        if (requirementStatus == null && acceptanceCriteriaCount == null) return;
+        runs.findById(runId).ifPresent(run -> {
+            run.recordRequirements(requirementStatus, acceptanceCriteriaCount);
+            runs.save(run);
+        });
+    }
+
     private void maybeRecordPrUrl(String runId, Map<String, Object> data) {
         if (!(data.get("prUrl") instanceof String prUrl)) return;
         runs.findById(runId).ifPresent(run -> {
@@ -128,6 +141,15 @@ public class SdlcRunRecorder {
         if (stagingStatus == null && stagingUrl == null && verificationStatus == null) return;
         runs.findById(runId).ifPresent(run -> {
             run.recordStaging(stagingStatus, stagingUrl, verificationStatus);
+            runs.save(run);
+        });
+    }
+
+    private void maybeRecordSmoke(String runId, Map<String, Object> data) {
+        if (!(data.get("smokeStatus") instanceof String smokeStatus)) return;
+        String smokeUrl = data.get("smokeUrl") instanceof String url ? url : null;
+        runs.findById(runId).ifPresent(run -> {
+            run.recordSmoke(smokeStatus, smokeUrl);
             runs.save(run);
         });
     }

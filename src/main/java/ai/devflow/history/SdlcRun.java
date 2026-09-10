@@ -41,12 +41,16 @@ public class SdlcRun {
     private long inputTokens;
     private long outputTokens;
 
+    private String requirementStatus;
+    private Integer acceptanceCriteriaCount;
     private Boolean buildSucceeded;
     private String prUrl;
     private String ciStatus;
     private String stagingStatus;
     private String stagingUrl;
     private String stagingVerificationStatus;
+    private String smokeStatus;
+    private String smokeUrl;
     private String releaseStatus;
     private String releaseUrl;
     private String verificationStatus;
@@ -76,12 +80,16 @@ public class SdlcRun {
     public Instant finishedAt() { return finishedAt; }
     public long inputTokens() { return inputTokens; }
     public long outputTokens() { return outputTokens; }
+    public String requirementStatus() { return requirementStatus; }
+    public Integer acceptanceCriteriaCount() { return acceptanceCriteriaCount; }
     public Boolean buildSucceeded() { return buildSucceeded; }
     public String prUrl() { return prUrl; }
     public String ciStatus() { return ciStatus; }
     public String stagingStatus() { return stagingStatus; }
     public String stagingUrl() { return stagingUrl; }
     public String stagingVerificationStatus() { return stagingVerificationStatus; }
+    public String smokeStatus() { return smokeStatus; }
+    public String smokeUrl() { return smokeUrl; }
     public String releaseStatus() { return releaseStatus; }
     public String releaseUrl() { return releaseUrl; }
     public String verificationStatus() { return verificationStatus; }
@@ -102,6 +110,11 @@ public class SdlcRun {
         this.buildSucceeded = succeeded;
     }
 
+    public void recordRequirements(String requirementStatus, Integer acceptanceCriteriaCount) {
+        if (requirementStatus != null) this.requirementStatus = requirementStatus;
+        if (acceptanceCriteriaCount != null) this.acceptanceCriteriaCount = acceptanceCriteriaCount;
+    }
+
     public void recordPrUrl(String prUrl) {
         this.prUrl = prUrl;
     }
@@ -114,6 +127,11 @@ public class SdlcRun {
         if (stagingStatus != null) this.stagingStatus = stagingStatus;
         if (stagingUrl != null) this.stagingUrl = stagingUrl;
         if (stagingVerificationStatus != null) this.stagingVerificationStatus = stagingVerificationStatus;
+    }
+
+    public void recordSmoke(String smokeStatus, String smokeUrl) {
+        this.smokeStatus = smokeStatus;
+        if (smokeUrl != null) this.smokeUrl = smokeUrl;
     }
 
     public void recordRelease(String releaseStatus, String releaseUrl) {

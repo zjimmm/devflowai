@@ -3,6 +3,9 @@ package ai.devflow.orchestrator;
 import ai.devflow.agent.Agent;
 import ai.devflow.agent.AgentResult;
 import ai.devflow.agent.Finding;
+import ai.devflow.agent.RequirementAnalysis;
+import ai.devflow.agent.RequirementAnalysisResult;
+import ai.devflow.agent.RequirementAnalyst;
 import ai.devflow.agent.Scribe;
 import ai.devflow.agent.SkillPicker;
 import ai.devflow.event.RunEvent;
@@ -37,9 +40,12 @@ public class Orchestrator implements RunExecutor {
 
     public record RunOutcome(boolean approved, String reason, RunState state) {}
 
+    private static final int MAX_REQUIREMENT_CLARIFICATION_ROUNDS = 3;
+
     private final Agent coder;
     private final Agent reviewer;
     private final Agent planner;
+    private final RequirementAnalyst requirementAnalyst;
     private final SkillPicker skillPicker;
     private final Scribe scribe;
     private final SkillStore skillStore;
@@ -124,9 +130,37 @@ public class Orchestrator implements RunExecutor {
                         CiObserver ciObserver, ReleaseDispatcher releaseDispatcher, ReleaseObserver releaseObserver,
                         RollbackDispatcher rollbackDispatcher, OperationalHealthObserver operationalHealthObserver,
                         StagingDispatcher stagingDispatcher) {
+        this(coder, reviewer, planner, skillPicker, scribe, skillStore, memoryStore, events,
+                maxReviewIterations, maxHumanIterations, buildTimeout, policyEngine, gitHubClient, ciObserver,
+                releaseDispatcher, releaseObserver, rollbackDispatcher, operationalHealthObserver, stagingDispatcher,
+                SmokeTestRunner.disabled());
+    }
+
+    public Orchestrator(Agent coder, Agent reviewer, Agent planner, SkillPicker skillPicker, Scribe scribe,
+                        SkillStore skillStore, MemoryStore memoryStore,
+                        RunEventPublisher events, int maxReviewIterations, int maxHumanIterations,
+                        Duration buildTimeout, PolicyEngine policyEngine, GitHubClient gitHubClient,
+                        CiObserver ciObserver, ReleaseDispatcher releaseDispatcher, ReleaseObserver releaseObserver,
+                        RollbackDispatcher rollbackDispatcher, OperationalHealthObserver operationalHealthObserver,
+                        StagingDispatcher stagingDispatcher, SmokeTestRunner smokeTestRunner) {
+        this(coder, reviewer, planner, skillPicker, scribe, skillStore, memoryStore, events,
+                maxReviewIterations, maxHumanIterations, buildTimeout, policyEngine, gitHubClient, ciObserver,
+                releaseDispatcher, releaseObserver, rollbackDispatcher, operationalHealthObserver, stagingDispatcher,
+                smokeTestRunner, RequirementAnalyst.disabled());
+    }
+
+    public Orchestrator(Agent coder, Agent reviewer, Agent planner, SkillPicker skillPicker, Scribe scribe,
+                        SkillStore skillStore, MemoryStore memoryStore,
+                        RunEventPublisher events, int maxReviewIterations, int maxHumanIterations,
+                        Duration buildTimeout, PolicyEngine policyEngine, GitHubClient gitHubClient,
+                        CiObserver ciObserver, ReleaseDispatcher releaseDispatcher, ReleaseObserver releaseObserver,
+                        RollbackDispatcher rollbackDispatcher, OperationalHealthObserver operationalHealthObserver,
+                        StagingDispatcher stagingDispatcher, SmokeTestRunner smokeTestRunner,
+                        RequirementAnalyst requirementAnalyst) {
         this.coder = coder;
         this.reviewer = reviewer;
         this.planner = planner;
+        this.requirementAnalyst = requirementAnalyst;
         this.skillPicker = skillPicker;
         this.scribe = scribe;
         this.skillStore = skillStore;
@@ -139,7 +173,7 @@ public class Orchestrator implements RunExecutor {
         this.gitHubClient = gitHubClient;
         this.ciObserver = ciObserver;
         this.releaseCoordinator = new ReleaseCoordinator(gitHubClient, releaseDispatcher, releaseObserver,
-                rollbackDispatcher, operationalHealthObserver, stagingDispatcher);
+                rollbackDispatcher, operationalHealthObserver, stagingDispatcher, smokeTestRunner);
     }
 
     public RunOutcome run(RunState state, ApprovalGate gate) {
@@ -189,7 +223,11 @@ public class Orchestrator implements RunExecutor {
             }
         }
 
+        RunOutcome requirementOutcome = analyzeRequirements(state, gate);
+        if (requirementOutcome != null) return requirementOutcome;
+
         // ---- Planner: once per run, after Gate 1 (spec §5) ----------------
+        state.setPhase(RunPhase.PLANNING);
         emit(state, "step", "Planner — thinking…", Map.of());
         AgentResult planned = planner.run(state);
         state.record(planned);
@@ -397,6 +435,8 @@ public class Orchestrator implements RunExecutor {
                 if (outcome.stagingVerificationStatus() != null) {
                     doneData.put("stagingVerificationStatus", outcome.stagingVerificationStatus().name());
                 }
+                if (outcome.smokeStatus() != null) doneData.put("smokeStatus", outcome.smokeStatus().name());
+                if (outcome.smokeUrl() != null) doneData.put("smokeUrl", outcome.smokeUrl());
                 if (outcome.rollbackStatus() != null) {
                     doneData.put("rollbackStatus", outcome.rollbackStatus().name());
                 }
@@ -406,8 +446,8 @@ public class Orchestrator implements RunExecutor {
             String outcomeReason = draftDeclinedByBareRejection
                     ? "Committed by operator; declined the proposed lesson"
                     : "Approved by reviewer and operator";
-            return new RunOutcome(true, outcomeReason, state);
-        }
+        return new RunOutcome(true, outcomeReason, state);
+    }
 
         String reason = lastPolicyFailureReason != null
                 ? "Review loop hit the cap of " + maxReviewIterations + " iterations (last blocked by policy: " + lastPolicyFailureReason + ")"
@@ -415,6 +455,51 @@ public class Orchestrator implements RunExecutor {
                         ? "Review loop ended without a review"
                         : "Review loop hit the cap of " + maxReviewIterations + " iterations";
         return failed(state, reason);
+    }
+
+    private RunOutcome analyzeRequirements(RunState state, ApprovalGate gate) {
+        if (!requirementAnalyst.isConfigured()) return null;
+
+        for (int round = 0; round <= MAX_REQUIREMENT_CLARIFICATION_ROUNDS; round++) {
+            state.setPhase(RunPhase.ANALYZING_REQUIREMENTS);
+            emit(state, "step", "Requirement analyst — structuring the request…", Map.of("round", round + 1));
+            RequirementAnalysisResult result = requirementAnalyst.analyze(state);
+            RequirementAnalysis analysis = result.analysis();
+            state.setRequirementAnalysis(analysis);
+            state.record(AgentResult.ok("requirement-analyst", analysis.summary(), List.of(), result.tokens()));
+
+            Map<String, Object> data = new HashMap<>();
+            data.put("requirementStatus", analysis.status());
+            data.put("functionalRequirements", analysis.functionalRequirements());
+            data.put("assumptions", analysis.assumptions());
+            data.put("edgeCases", analysis.edgeCases());
+            data.put("acceptanceCriteria", analysis.acceptanceCriteria());
+            data.put("acceptanceCriteriaCount", analysis.acceptanceCriteria().size());
+            data.put("missingInformation", analysis.missingInformation());
+            emit(state, "step", "Requirement analysis ready", data);
+
+            if (!analysis.clarificationRequired()) return null;
+
+            state.setPhase(RunPhase.WAITING_FOR_REQUIREMENTS_CLARIFICATION);
+            emit(state, "gate", analysis.clarificationQuestion(), Map.of(
+                    "gate", Gate.REQUIREMENTS_CLARIFICATION.name(),
+                    "requirementStatus", analysis.status(),
+                    "missingInformation", analysis.missingInformation(),
+                    "clarificationQuestion", analysis.clarificationQuestion()));
+            ApprovalDecision decision = gate.await(Gate.REQUIREMENTS_CLARIFICATION);
+            if (decision.approved()) {
+                emit(state, "step", "Operator accepted the documented requirement assumptions", Map.of());
+                return null;
+            }
+            if (!decision.hasReason()) return aborted(state, "Requirement clarification was rejected without guidance");
+            if (round == MAX_REQUIREMENT_CLARIFICATION_ROUNDS) {
+                return failed(state, "Requirement clarification exceeded the bounded retry limit");
+            }
+            state.addRequirementClarification(decision.reason());
+            state.incrementHumanIterations();
+            emit(state, "step", "Operator clarified the requirements; analyzing again", Map.of());
+        }
+        return failed(state, "Requirement analysis did not converge");
     }
 
     private CiStatus observeCi(RunState state, String prUrl) {

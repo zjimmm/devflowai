@@ -145,6 +145,17 @@ class OrchestratorTest {
                 events, 3, 5, Duration.ofMinutes(1), policyEngine, gitHubClient);
     }
 
+    private Orchestrator orchestrator(Agent coder, Agent reviewer, RequirementAnalyst requirementAnalyst) {
+        return new Orchestrator(coder, reviewer, planner, (task, index) -> List.of(),
+                (state, findings, reason) -> ScribeDraft.EMPTY, new FakeSkillStore(), new FakeMemoryStore(),
+                events, 3, 5, Duration.ofMinutes(1), policyEngine, gitHubClient,
+                (repoUrl, ref, onUpdate) -> { throw new GitHubClientException("CI observation is not configured"); },
+                ReleaseDispatcher.disabled(),
+                (repoUrl, workflowRunId, onUpdate) -> { throw new GitHubClientException("Release verification is not configured"); },
+                RollbackDispatcher.disabled(), OperationalHealthObserver.disabled(), StagingDispatcher.disabled(),
+                SmokeTestRunner.disabled(), requirementAnalyst);
+    }
+
     /** Writes a real file so changedFiles() is non-empty, as a real coder would. */
     private ScriptedAgent writingCoder(String summary) {
         return new ScriptedAgent("coder", List.of(
@@ -189,6 +200,75 @@ class OrchestratorTest {
         assertThat(coder.calls).isEqualTo(1);
         assertThat(reviewer.calls).isEqualTo(1);
         assertThat(state.phase()).isEqualTo(RunPhase.DONE);
+    }
+
+    @Test
+    void requirementAnalysisRunsBeforePlanning() throws Exception {
+        var plannerSawRequirements = new java.util.concurrent.atomic.AtomicBoolean();
+        planner = new Agent() {
+            @Override public String name() { return "planner"; }
+            @Override public AgentResult run(RunState state) {
+                plannerSawRequirements.set(state.requirementAnalysis() != null);
+                return AgentResult.ok("planner", "plan", List.of(), TokenUsage.NONE);
+            }
+        };
+        RequirementAnalysis analysis = readyAnalysis("Given a valid task, when planned, then produce steps");
+        RequirementAnalyst analyst = configuredAnalyst(state -> new RequirementAnalysisResult(analysis,
+                new TokenUsage(7, 3)));
+        var state = new RunState("requirements-before-plan", "do a thing", workspace);
+        var gate = new ApprovalGate(Duration.ofSeconds(10));
+
+        var outcome = runApprovingAll(orchestrator(writingCoder("done"), okReviewer(), analyst), state, gate);
+
+        assertThat(outcome.approved()).isTrue();
+        assertThat(plannerSawRequirements).isTrue();
+        assertThat(state.requirementAnalysis()).isEqualTo(analysis);
+        assertThat(state.totalTokens()).isEqualTo(new TokenUsage(7, 3));
+    }
+
+    @Test
+    void operatorClarificationReRunsRequirementAnalysisBeforePlanning() throws Exception {
+        AtomicInteger analystCalls = new AtomicInteger();
+        RequirementAnalyst analyst = configuredAnalyst(state -> {
+            if (analystCalls.getAndIncrement() == 0) {
+                return new RequirementAnalysisResult(new RequirementAnalysis(
+                        List.of("FR-1 Add export"), List.of(), List.of(),
+                        List.of("Given export, when requested, then return a file"),
+                        List.of("Required file format"), true, "Which export format should be used?"),
+                        TokenUsage.NONE);
+            }
+            return new RequirementAnalysisResult(readyAnalysis(
+                    "Given CSV export, when requested, then return a CSV file"), TokenUsage.NONE);
+        });
+        var state = new RunState("requirements-clarified", "add export", workspace);
+        var gate = new ApprovalGate(Duration.ofSeconds(10));
+        Future<Orchestrator.RunOutcome> outcome = pool.submit(() ->
+                orchestrator(writingCoder("done"), okReviewer(), analyst).run(state, gate));
+
+        while (gate.pending() != Gate.PRE_FLIGHT) Thread.sleep(5);
+        gate.decide(ApprovalDecision.approve());
+        while (gate.pending() != Gate.REQUIREMENTS_CLARIFICATION) Thread.sleep(5);
+        gate.decide(ApprovalDecision.rejectWith("Use CSV"));
+        approveGatesUntilDone(gate, outcome);
+
+        assertThat(outcome.get(10, TimeUnit.SECONDS).approved()).isTrue();
+        assertThat(analystCalls).hasValue(2);
+        assertThat(state.requirementClarifications()).containsExactly("Use CSV");
+        assertThat(state.requirementAnalysis().acceptanceCriteria()).containsExactly(
+                "Given CSV export, when requested, then return a CSV file");
+    }
+
+    private RequirementAnalysis readyAnalysis(String acceptanceCriterion) {
+        return new RequirementAnalysis(List.of("FR-1 Implement the requested behavior"), List.of(), List.of(),
+                List.of(acceptanceCriterion), List.of(), false, "");
+    }
+
+    private RequirementAnalyst configuredAnalyst(
+            java.util.function.Function<RunState, RequirementAnalysisResult> analyze) {
+        return new RequirementAnalyst() {
+            @Override public boolean isConfigured() { return true; }
+            @Override public RequirementAnalysisResult analyze(RunState state) { return analyze.apply(state); }
+        };
     }
 
     @Test

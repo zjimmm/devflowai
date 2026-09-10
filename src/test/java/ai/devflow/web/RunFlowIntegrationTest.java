@@ -31,7 +31,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * Proves the whole path — HTTP start, SSE-backing state, a gate decision over
  * HTTP, completion — through the real {@link RunController}, {@link RunRegistry},
  * {@link Orchestrator} and {@link ApprovalGate}, wired by the real
- * {@code OrchestrationConfig}. Only the two LLM-calling agents are replaced,
+ * {@code OrchestrationConfig}. Only the LLM-calling roles are replaced,
  * so this costs nothing and runs in CI.
  *
  * <p><b>Deviation from the task brief:</b> the brief's approach (a
@@ -91,6 +91,9 @@ class RunFlowIntegrationTest {
     @TestBean(name = "plannerAgent", methodName = "stubPlannerAgent")
     Agent plannerAgentOverride;
 
+    @TestBean(name = "requirementAnalyst", methodName = "stubRequirementAnalyst")
+    RequirementAnalyst requirementAnalystOverride;
+
     @TestBean(name = "scribeAgent", methodName = "stubScribeAgent")
     Scribe scribeAgentOverride;
 
@@ -138,6 +141,18 @@ class RunFlowIntegrationTest {
             @Override public String name() { return "planner"; }
             @Override public AgentResult run(RunState s) {
                 return AgentResult.ok("planner", "1. Make the change\n2. Verify it", List.of(), TokenUsage.NONE);
+            }
+        };
+    }
+
+    static RequirementAnalyst stubRequirementAnalyst() {
+        return new RequirementAnalyst() {
+            @Override public boolean isConfigured() { return true; }
+            @Override public RequirementAnalysisResult analyze(RunState state) {
+                return new RequirementAnalysisResult(new RequirementAnalysis(
+                        List.of("FR-1 Implement " + state.task()), List.of(), List.of(),
+                        List.of("Given the requested change, when implemented, then the build passes"),
+                        List.of(), false, ""), TokenUsage.NONE);
             }
         };
     }

@@ -78,6 +78,18 @@ public class ChatClientConfig {
                 .build();
     }
 
+    @Bean @Qualifier("analyst")
+    ChatClient analystChatClient(ChatClient.Builder builder) {
+        return builder.defaultOptions(agentOptions(ModelNames.OPUS))
+                .defaultSystem("""
+                    You are the Requirement Analyst in an automated development crew.
+                    Convert informal requests into explicit functional requirements, assumptions,
+                    edge cases, acceptance criteria, and missing information.
+                    Do not inspect or modify files. Answer only in the requested JSON shape.
+                    """)
+                .build();
+    }
+
     @Bean @Qualifier("reviewer")
     ChatClient reviewerChatClient(ChatClient.Builder builder) {
         return builder.defaultOptions(agentOptions(ModelNames.SONNET))

@@ -70,13 +70,21 @@ public class DirectExecutor implements RunExecutor {
                           CiObserver ciObserver, ReleaseDispatcher releaseDispatcher, ReleaseObserver releaseObserver,
                           RollbackDispatcher rollbackDispatcher, OperationalHealthObserver operationalHealthObserver,
                           StagingDispatcher stagingDispatcher) {
+        this(coder, events, buildTimeout, gitHubClient, ciObserver, releaseDispatcher, releaseObserver,
+                rollbackDispatcher, operationalHealthObserver, stagingDispatcher, SmokeTestRunner.disabled());
+    }
+
+    public DirectExecutor(Agent coder, RunEventPublisher events, Duration buildTimeout, GitHubClient gitHubClient,
+                          CiObserver ciObserver, ReleaseDispatcher releaseDispatcher, ReleaseObserver releaseObserver,
+                          RollbackDispatcher rollbackDispatcher, OperationalHealthObserver operationalHealthObserver,
+                          StagingDispatcher stagingDispatcher, SmokeTestRunner smokeTestRunner) {
         this.coder = coder;
         this.events = events;
         this.buildTimeout = buildTimeout;
         this.gitHubClient = gitHubClient;
         this.ciObserver = ciObserver;
         this.releaseCoordinator = new ReleaseCoordinator(gitHubClient, releaseDispatcher, releaseObserver,
-                rollbackDispatcher, operationalHealthObserver, stagingDispatcher);
+                rollbackDispatcher, operationalHealthObserver, stagingDispatcher, smokeTestRunner);
     }
 
     @Override
@@ -179,6 +187,8 @@ public class DirectExecutor implements RunExecutor {
             if (outcome.stagingVerificationStatus() != null) {
                 doneData.put("stagingVerificationStatus", outcome.stagingVerificationStatus().name());
             }
+            if (outcome.smokeStatus() != null) doneData.put("smokeStatus", outcome.smokeStatus().name());
+            if (outcome.smokeUrl() != null) doneData.put("smokeUrl", outcome.smokeUrl());
             if (outcome.rollbackStatus() != null) {
                 doneData.put("rollbackStatus", outcome.rollbackStatus().name());
             }

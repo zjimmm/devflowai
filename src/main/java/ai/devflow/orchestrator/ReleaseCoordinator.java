@@ -15,7 +15,8 @@ public class ReleaseCoordinator {
                                  VerificationStatus verificationStatus, RollbackStatus rollbackStatus,
                                  String rollbackUrl, OperationalHealthStatus healthStatus, String healthUrl,
                                  StagingStatus stagingStatus, String stagingUrl,
-                                 VerificationStatus stagingVerificationStatus) {}
+                                 VerificationStatus stagingVerificationStatus, SmokeTestStatus smokeStatus,
+                                 String smokeUrl) {}
 
     public record ReleaseEvent(String type, String message, Map<String, Object> data) {}
 
@@ -25,11 +26,13 @@ public class ReleaseCoordinator {
     private final RollbackDispatcher rollbackDispatcher;
     private final OperationalHealthObserver operationalHealthObserver;
     private final StagingDispatcher stagingDispatcher;
+    private final SmokeTestRunner smokeTestRunner;
 
     public ReleaseCoordinator(GitHubClient gitHubClient, ReleaseDispatcher releaseDispatcher) {
         this(gitHubClient, releaseDispatcher,
                 (repoUrl, workflowRunId, onUpdate) -> { throw new GitHubClientException("Release verification is not configured"); },
-                RollbackDispatcher.disabled(), OperationalHealthObserver.disabled(), StagingDispatcher.disabled());
+                RollbackDispatcher.disabled(), OperationalHealthObserver.disabled(), StagingDispatcher.disabled(),
+                SmokeTestRunner.disabled());
     }
 
     public ReleaseCoordinator(GitHubClient gitHubClient, ReleaseDispatcher releaseDispatcher,
@@ -41,25 +44,34 @@ public class ReleaseCoordinator {
     public ReleaseCoordinator(GitHubClient gitHubClient, ReleaseDispatcher releaseDispatcher,
                               ReleaseObserver releaseObserver, RollbackDispatcher rollbackDispatcher) {
         this(gitHubClient, releaseDispatcher, releaseObserver, rollbackDispatcher, OperationalHealthObserver.disabled(),
-                StagingDispatcher.disabled());
+                StagingDispatcher.disabled(), SmokeTestRunner.disabled());
     }
 
     public ReleaseCoordinator(GitHubClient gitHubClient, ReleaseDispatcher releaseDispatcher,
                               ReleaseObserver releaseObserver, RollbackDispatcher rollbackDispatcher,
                               OperationalHealthObserver operationalHealthObserver) {
         this(gitHubClient, releaseDispatcher, releaseObserver, rollbackDispatcher, operationalHealthObserver,
-                StagingDispatcher.disabled());
+                StagingDispatcher.disabled(), SmokeTestRunner.disabled());
     }
 
     public ReleaseCoordinator(GitHubClient gitHubClient, ReleaseDispatcher releaseDispatcher,
                               ReleaseObserver releaseObserver, RollbackDispatcher rollbackDispatcher,
                               OperationalHealthObserver operationalHealthObserver, StagingDispatcher stagingDispatcher) {
+        this(gitHubClient, releaseDispatcher, releaseObserver, rollbackDispatcher, operationalHealthObserver,
+                stagingDispatcher, SmokeTestRunner.disabled());
+    }
+
+    public ReleaseCoordinator(GitHubClient gitHubClient, ReleaseDispatcher releaseDispatcher,
+                              ReleaseObserver releaseObserver, RollbackDispatcher rollbackDispatcher,
+                              OperationalHealthObserver operationalHealthObserver, StagingDispatcher stagingDispatcher,
+                              SmokeTestRunner smokeTestRunner) {
         this.gitHubClient = gitHubClient;
         this.releaseDispatcher = releaseDispatcher;
         this.releaseObserver = releaseObserver;
         this.rollbackDispatcher = rollbackDispatcher;
         this.operationalHealthObserver = operationalHealthObserver;
         this.stagingDispatcher = stagingDispatcher;
+        this.smokeTestRunner = smokeTestRunner;
     }
 
     public Optional<ReleaseOutcome> dispatchIfRequested(RunState state, ApprovalGate gate,
@@ -81,10 +93,17 @@ public class ReleaseCoordinator {
             return Optional.of(blockedWithStaging(publish,
                     "Release blocked: staging did not complete successfully.", stagingOutcome));
         }
+        SmokeOutcome smokeOutcome = runSmokeTests(state, stagingOutcome, publish);
+        if (smokeOutcome.blocksRelease()) {
+            return Optional.of(blockedWithDeliveryChecks(publish,
+                    "Release blocked: smoke tests did not complete successfully.", stagingOutcome, smokeOutcome));
+        }
 
         state.setPhase(RunPhase.WAITING_FOR_RELEASE_APPROVAL);
-        String gateMessage = stagingOutcome.status() == StagingStatus.DISPATCHED
-                ? "Staging verification passed. Approve production release workflow dispatch."
+        String gateMessage = smokeOutcome.status() == SmokeTestStatus.PASSED
+                ? "Staging and smoke tests passed. Approve production release workflow dispatch."
+                : stagingOutcome.status() == StagingStatus.DISPATCHED
+                    ? "Staging verification passed. Approve production release workflow dispatch."
                 : "Merge the pull request, then approve release workflow dispatch.";
         publish.accept(new ReleaseEvent("gate", gateMessage, Map.of(
                 "gate", Gate.BEFORE_RELEASE.name(), "prUrl", prUrl,
@@ -93,7 +112,7 @@ public class ReleaseCoordinator {
             publish.accept(new ReleaseEvent("step", "Release was not approved; no workflow was dispatched.",
                     Map.of("releaseStatus", ReleaseStatus.SKIPPED.name())));
             return Optional.of(outcome(ReleaseStatus.SKIPPED, null, null, null, null, null,
-                    null, null, stagingOutcome));
+                    null, null, stagingOutcome, smokeOutcome));
         }
 
         try {
@@ -118,13 +137,52 @@ public class ReleaseCoordinator {
             RollbackOutcome rollbackOutcome = dispatchRollbackIfNeeded(state, gate, verificationStatus, healthOutcome.status(), publish);
             return Optional.of(outcome(ReleaseStatus.DISPATCHED, result.htmlUrl(), result.workflowRunId(),
                     verificationStatus, rollbackOutcome.status(), rollbackOutcome.url(), healthOutcome.status(),
-                    healthOutcome.url(), stagingOutcome));
+                    healthOutcome.url(), stagingOutcome, smokeOutcome));
         } catch (GitHubClientException | RuntimeException e) {
             publish.accept(new ReleaseEvent("warn", "Release dispatch failed: " + e.getMessage()
                     + ". Inspect GitHub Actions manually.", Map.of("releaseStatus", ReleaseStatus.FAILED.name())));
             return Optional.of(outcome(ReleaseStatus.FAILED, null, null, null, null, null,
-                    null, null, stagingOutcome));
+                    null, null, stagingOutcome, smokeOutcome));
         }
+    }
+
+    private SmokeOutcome runSmokeTests(RunState state, StagingOutcome stagingOutcome,
+                                       Consumer<ReleaseEvent> publish) {
+        if (!smokeTestRunner.isConfigured()) return SmokeOutcome.notRun();
+        if (stagingOutcome.status() != StagingStatus.DISPATCHED
+                || stagingOutcome.verificationStatus() != VerificationStatus.PASSED) {
+            publish.accept(new ReleaseEvent("warn", "Smoke tests require a successfully verified staging deployment.",
+                    Map.of("smokeStatus", SmokeTestStatus.BLOCKED.name())));
+            return new SmokeOutcome(SmokeTestStatus.BLOCKED, null);
+        }
+
+        state.setPhase(RunPhase.RUNNING_SMOKE_TESTS);
+        SmokeTestObservation observation;
+        try {
+            observation = smokeTestRunner.run();
+        } catch (RuntimeException e) {
+            publish.accept(new ReleaseEvent("warn", "Smoke tests are unavailable: " + e.getMessage()
+                    + ". Production release remains blocked.", Map.of("smokeStatus", SmokeTestStatus.UNAVAILABLE.name())));
+            return new SmokeOutcome(SmokeTestStatus.UNAVAILABLE, null);
+        }
+
+        for (OperationalHealthObservation result : observation.results()) {
+            Map<String, Object> data = new HashMap<>();
+            data.put("smokeStatus", result.status().name());
+            if (result.endpoint() != null) data.put("smokeUrl", result.endpoint());
+            if (result.statusCode() != null) data.put("smokeStatusCode", result.statusCode());
+            publish.accept(new ReleaseEvent(result.status() == OperationalHealthStatus.PASSED ? "step" : "warn",
+                    smokeResultMessage(result), data));
+        }
+        String representativeUrl = observation.results().stream()
+                .filter(result -> result.status() != OperationalHealthStatus.PASSED)
+                .findFirst()
+                .or(() -> observation.results().stream().findFirst())
+                .map(OperationalHealthObservation::endpoint)
+                .orElse(null);
+        publish.accept(new ReleaseEvent(observation.status() == SmokeTestStatus.PASSED ? "step" : "warn",
+                smokeSummaryMessage(observation.status()), Map.of("smokeStatus", observation.status().name())));
+        return new SmokeOutcome(observation.status(), representativeUrl);
     }
 
     private StagingOutcome prepareStagingIfConfigured(RunState state, ApprovalGate gate, String prUrl, int prNumber,
@@ -277,6 +335,24 @@ public class ReleaseCoordinator {
         };
     }
 
+    private String smokeResultMessage(OperationalHealthObservation result) {
+        String statusCode = result.statusCode() == null ? "" : " (HTTP " + result.statusCode() + ")";
+        return switch (result.status()) {
+            case PASSED -> "Smoke endpoint passed" + statusCode;
+            case FAILED -> "Smoke endpoint failed" + statusCode;
+            case UNAVAILABLE -> "Smoke endpoint is unavailable";
+        };
+    }
+
+    private String smokeSummaryMessage(SmokeTestStatus status) {
+        return switch (status) {
+            case PASSED -> "All configured smoke tests passed";
+            case FAILED -> "One or more configured smoke tests failed; production release remains blocked";
+            case UNAVAILABLE -> "One or more configured smoke tests were unavailable; production release remains blocked";
+            case BLOCKED -> "Smoke tests could not run; production release remains blocked";
+        };
+    }
+
     private HealthOutcome observeOperationalHealth(RunState state, VerificationStatus verificationStatus,
                                                    Consumer<ReleaseEvent> publish) {
         if (verificationStatus != VerificationStatus.PASSED || !operationalHealthObserver.isConfigured()) {
@@ -312,22 +388,30 @@ public class ReleaseCoordinator {
     private ReleaseOutcome blocked(Consumer<ReleaseEvent> publish, String message) {
         publish.accept(new ReleaseEvent("warn", message, Map.of("releaseStatus", ReleaseStatus.BLOCKED.name())));
         return outcome(ReleaseStatus.BLOCKED, null, null, null, null, null,
-                null, null, StagingOutcome.notRequired());
+                null, null, StagingOutcome.notRequired(), SmokeOutcome.notRun());
     }
 
     private ReleaseOutcome blockedWithStaging(Consumer<ReleaseEvent> publish, String message,
                                               StagingOutcome stagingOutcome) {
         publish.accept(new ReleaseEvent("warn", message, Map.of("releaseStatus", ReleaseStatus.BLOCKED.name())));
-        return outcome(ReleaseStatus.BLOCKED, null, null, null, null, null, null, null, stagingOutcome);
+        return outcome(ReleaseStatus.BLOCKED, null, null, null, null, null, null, null,
+                stagingOutcome, SmokeOutcome.notRun());
+    }
+
+    private ReleaseOutcome blockedWithDeliveryChecks(Consumer<ReleaseEvent> publish, String message,
+                                                     StagingOutcome stagingOutcome, SmokeOutcome smokeOutcome) {
+        publish.accept(new ReleaseEvent("warn", message, Map.of("releaseStatus", ReleaseStatus.BLOCKED.name())));
+        return outcome(ReleaseStatus.BLOCKED, null, null, null, null, null, null, null,
+                stagingOutcome, smokeOutcome);
     }
 
     private ReleaseOutcome outcome(ReleaseStatus releaseStatus, String releaseUrl, Long workflowRunId,
                                    VerificationStatus verificationStatus, RollbackStatus rollbackStatus,
                                    String rollbackUrl, OperationalHealthStatus healthStatus, String healthUrl,
-                                   StagingOutcome stagingOutcome) {
+                                   StagingOutcome stagingOutcome, SmokeOutcome smokeOutcome) {
         return new ReleaseOutcome(releaseStatus, releaseUrl, workflowRunId, verificationStatus,
                 rollbackStatus, rollbackUrl, healthStatus, healthUrl, stagingOutcome.status(), stagingOutcome.url(),
-                stagingOutcome.verificationStatus());
+                stagingOutcome.verificationStatus(), smokeOutcome.status(), smokeOutcome.url());
     }
 
     private record RollbackOutcome(RollbackStatus status, String url) {
@@ -351,6 +435,16 @@ public class ReleaseCoordinator {
         private boolean blocksRelease() {
             return status != null && (status != StagingStatus.DISPATCHED
                     || verificationStatus != VerificationStatus.PASSED);
+        }
+    }
+
+    private record SmokeOutcome(SmokeTestStatus status, String url) {
+        private static SmokeOutcome notRun() {
+            return new SmokeOutcome(null, null);
+        }
+
+        private boolean blocksRelease() {
+            return status != null && status != SmokeTestStatus.PASSED;
         }
     }
 }

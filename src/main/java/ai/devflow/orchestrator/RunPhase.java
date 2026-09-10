@@ -3,6 +3,9 @@ package ai.devflow.orchestrator;
 /** Coarse lifecycle position of a run, surfaced to the UI via SSE. */
 public enum RunPhase {
     PREPARING,
+    ANALYZING_REQUIREMENTS,
+    WAITING_FOR_REQUIREMENTS_CLARIFICATION,
+    PLANNING,
     CODING,
     REVIEWING,
     BUILDING,
@@ -13,6 +16,7 @@ public enum RunPhase {
     VERIFYING_STAGING_PR,
     DISPATCHING_STAGING,
     VERIFYING_STAGING,
+    RUNNING_SMOKE_TESTS,
     WAITING_FOR_RELEASE_APPROVAL,
     VERIFYING_RELEASE_PR,
     DISPATCHING_RELEASE,

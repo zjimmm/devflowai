@@ -37,6 +37,9 @@ devflowai:
   staging:
     workflow: ${DEVFLOWAI_STAGING_WORKFLOW:}
     ref: ${DEVFLOWAI_STAGING_REF:main}
+  smoke:
+    urls: ${DEVFLOWAI_SMOKE_URLS:}
+    timeout-seconds: ${DEVFLOWAI_SMOKE_TIMEOUT_SECONDS:10}
   health:
     url: ${DEVFLOWAI_HEALTH_URL:}
     timeout-seconds: ${DEVFLOWAI_HEALTH_TIMEOUT_SECONDS:10}

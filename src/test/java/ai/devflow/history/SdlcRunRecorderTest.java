@@ -151,6 +151,34 @@ class SdlcRunRecorderTest {
     }
 
     @Test
+    void requirementAnalysisRecordsStatusAndAcceptanceCriteriaCount() {
+        recorder.onRunRecorded(new RunRecorded("r-requirements", new RunEvent("step", "start",
+                Map.of("task", "t", "repoSlug", "fixture", "phase", "PREPARING", "strategy", "ORCHESTRATED"))));
+
+        recorder.onRunRecorded(new RunRecorded("r-requirements", new RunEvent("step", "analyzed",
+                Map.of("phase", "ANALYZING_REQUIREMENTS", "requirementStatus", "READY",
+                        "acceptanceCriteriaCount", 4))));
+
+        var run = runs.findById("r-requirements").orElseThrow();
+        assertThat(run.requirementStatus()).isEqualTo("READY");
+        assertThat(run.acceptanceCriteriaCount()).isEqualTo(4);
+    }
+
+    @Test
+    void smokeEventsRecordStatusAndEndpoint() {
+        recorder.onRunRecorded(new RunRecorded("r-smoke", new RunEvent("step", "start",
+                Map.of("task", "t", "repoSlug", "fixture", "phase", "PREPARING", "strategy", "DIRECT"))));
+
+        recorder.onRunRecorded(new RunRecorded("r-smoke", new RunEvent("step", "smoke passed",
+                Map.of("phase", "RUNNING_SMOKE_TESTS", "smokeStatus", "PASSED",
+                        "smokeUrl", "https://service.example/smoke"))));
+
+        var run = runs.findById("r-smoke").orElseThrow();
+        assertThat(run.smokeStatus()).isEqualTo("PASSED");
+        assertThat(run.smokeUrl()).isEqualTo("https://service.example/smoke");
+    }
+
+    @Test
     void aReleaseEventRecordsItsStatusAndUrl() {
         recorder.onRunRecorded(new RunRecorded("r-release", new RunEvent("step", "start",
                 Map.of("task", "t", "repoSlug", "fixture", "phase", "PREPARING", "strategy", "DIRECT"))));

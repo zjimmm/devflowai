@@ -19,6 +19,8 @@ import ai.devflow.orchestrator.ReleaseObserver;
 import ai.devflow.orchestrator.RollbackDispatcher;
 import ai.devflow.orchestrator.RunExecutor;
 import ai.devflow.orchestrator.RunRegistry;
+import ai.devflow.orchestrator.HttpSmokeTestRunner;
+import ai.devflow.orchestrator.SmokeTestRunner;
 import ai.devflow.orchestrator.StagingDispatcher;
 import ai.devflow.policy.ConfigurablePolicyEngine;
 import ai.devflow.policy.PolicyEngine;
@@ -78,6 +80,16 @@ public class OrchestrationConfig {
     @Bean
     Agent plannerAgent(@Qualifier("planner") CodingWorker plannerWorker) {
         return new PlannerAgent(plannerWorker);
+    }
+
+    @Bean @Qualifier("analyst")
+    CodingWorker analystWorker(@Qualifier("analyst") ChatClient analystChatClient) {
+        return new SpringAiCodingWorker(analystChatClient);
+    }
+
+    @Bean
+    RequirementAnalyst requirementAnalyst(@Qualifier("analyst") CodingWorker analystWorker) {
+        return new RequirementAnalystAgent(analystWorker);
     }
 
     @Bean
@@ -167,6 +179,12 @@ public class OrchestrationConfig {
     }
 
     @Bean
+    SmokeTestRunner smokeTestRunner(@Value("${devflowai.smoke.urls:}") String smokeUrls,
+                                    @Value("${devflowai.smoke.timeout-seconds:10}") long timeoutSeconds) {
+        return new HttpSmokeTestRunner(smokeUrls, Duration.ofSeconds(timeoutSeconds));
+    }
+
+    @Bean
     Orchestrator orchestrator(Agent coderAgent, Agent reviewerAgent, Agent plannerAgent, SkillPicker skillPicker, Scribe scribe,
                               SkillStore skillStore, MemoryStore memoryStore, RunEventPublisher events,
                               @Value("${devflowai.review.max-iterations:3}") int maxReviewIterations,
@@ -175,11 +193,12 @@ public class OrchestrationConfig {
                               PolicyEngine policyEngine, GitHubClient gitHubClient, CiObserver ciObserver,
                               ReleaseDispatcher releaseDispatcher, ReleaseObserver releaseObserver,
                               RollbackDispatcher rollbackDispatcher, OperationalHealthObserver operationalHealthObserver,
-                              StagingDispatcher stagingDispatcher) {
+                              StagingDispatcher stagingDispatcher, SmokeTestRunner smokeTestRunner,
+                              RequirementAnalyst requirementAnalyst) {
         return new Orchestrator(coderAgent, reviewerAgent, plannerAgent, skillPicker, scribe, skillStore, memoryStore,
                 events, maxReviewIterations, maxHumanIterations, Duration.ofMinutes(buildTimeoutMinutes), policyEngine,
                 gitHubClient, ciObserver, releaseDispatcher, releaseObserver, rollbackDispatcher,
-                operationalHealthObserver, stagingDispatcher);
+                operationalHealthObserver, stagingDispatcher, smokeTestRunner, requirementAnalyst);
     }
 
     @Bean
@@ -187,9 +206,11 @@ public class OrchestrationConfig {
                               @Value("${devflowai.build.timeout-minutes:5}") long buildTimeoutMinutes,
                               GitHubClient gitHubClient, CiObserver ciObserver, ReleaseDispatcher releaseDispatcher,
                               ReleaseObserver releaseObserver, RollbackDispatcher rollbackDispatcher,
-                              OperationalHealthObserver operationalHealthObserver, StagingDispatcher stagingDispatcher) {
+                              OperationalHealthObserver operationalHealthObserver, StagingDispatcher stagingDispatcher,
+                              SmokeTestRunner smokeTestRunner) {
         return new DirectExecutor(coderAgent, events, Duration.ofMinutes(buildTimeoutMinutes), gitHubClient, ciObserver,
-                releaseDispatcher, releaseObserver, rollbackDispatcher, operationalHealthObserver, stagingDispatcher);
+                releaseDispatcher, releaseObserver, rollbackDispatcher, operationalHealthObserver, stagingDispatcher,
+                smokeTestRunner);
     }
 
     @Bean

@@ -76,6 +76,31 @@ class PlannerAgentTest {
     }
 
     @Test
+    void structuredRequirementsAndAcceptanceCriteriaAreIncludedInThePrompt() {
+        ChatClient client = mock(ChatClient.class, RETURNS_DEEP_STUBS);
+        when(client.prompt().user(any(String.class)).tools(any(Object[].class)).call().chatResponse())
+                .thenReturn(responseWith("a plan", 10, 5));
+
+        var state = new RunState("planner-test", "add validation", workspace);
+        state.setRequirementAnalysis(new RequirementAnalysis(
+                List.of("FR-1 Reject blank email"),
+                List.of("The endpoint already exists"),
+                List.of("Whitespace-only email"),
+                List.of("Given blank email, when submitted, then return 400"),
+                List.of(), false, ""));
+
+        new PlannerAgent(new SpringAiCodingWorker(client)).run(state);
+
+        var promptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(client.prompt(), atLeastOnce()).user(promptCaptor.capture());
+        assertThat(promptCaptor.getValue())
+                .contains("FR-1 Reject blank email")
+                .contains("Given blank email, when submitted, then return 400")
+                .contains("The endpoint already exists")
+                .contains("Whitespace-only email");
+    }
+
+    @Test
     void reportsRealTokenUsageFromTheResponse() {
         ChatClient client = mock(ChatClient.class, RETURNS_DEEP_STUBS);
         when(client.prompt().user(any(String.class)).tools(any(Object[].class)).call().chatResponse())
